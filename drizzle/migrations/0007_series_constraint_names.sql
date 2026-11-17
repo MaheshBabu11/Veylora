@@ -1,0 +1,26 @@
+ALTER TABLE series RENAME CONSTRAINT manga_cover_chapter_id_fkey TO series_cover_chapter_id_fkey;
+ALTER TABLE series RENAME CONSTRAINT manga_cover_page_number_check TO series_cover_page_number_check;
+ALTER TABLE series RENAME CONSTRAINT manga_created_at_not_null TO series_created_at_not_null;
+ALTER TABLE series RENAME CONSTRAINT manga_description_not_null TO series_description_not_null;
+ALTER TABLE series RENAME CONSTRAINT manga_directory_id_fkey TO series_directory_id_fkey;
+ALTER TABLE series RENAME CONSTRAINT manga_favorite_not_null TO series_favorite_not_null;
+ALTER TABLE series RENAME CONSTRAINT manga_featured_not_null TO series_featured_not_null;
+ALTER TABLE series RENAME CONSTRAINT manga_id_not_null TO series_id_not_null;
+ALTER TABLE series RENAME CONSTRAINT manga_source_path_not_null TO series_source_path_not_null;
+ALTER TABLE series RENAME CONSTRAINT manga_status_not_null TO series_status_not_null;
+ALTER TABLE series RENAME CONSTRAINT manga_title_not_null TO series_title_not_null;
+ALTER TABLE series RENAME CONSTRAINT manga_updated_at_not_null TO series_updated_at_not_null;
+
+ALTER TABLE chapters RENAME CONSTRAINT chapters_manga_id_not_null TO chapters_series_id_not_null;
+ALTER TABLE series_authors RENAME CONSTRAINT manga_authors_author_id_not_null TO series_authors_author_id_not_null;
+ALTER TABLE series_authors RENAME CONSTRAINT manga_authors_manga_id_not_null TO series_authors_series_id_not_null;
+ALTER TABLE series_genres RENAME CONSTRAINT manga_genres_genre_id_not_null TO series_genres_genre_id_not_null;
+ALTER TABLE series_genres RENAME CONSTRAINT manga_genres_manga_id_not_null TO series_genres_series_id_not_null;
+ALTER TABLE series_tags RENAME CONSTRAINT manga_tags_manga_id_not_null TO series_tags_series_id_not_null;
+ALTER TABLE series_tags RENAME CONSTRAINT manga_tags_tag_id_not_null TO series_tags_tag_id_not_null;
+ALTER TABLE reading_progress RENAME CONSTRAINT reading_progress_manga_id_not_null TO reading_progress_series_id_not_null;
+ALTER TABLE reading_history RENAME CONSTRAINT reading_history_manga_id_not_null TO reading_history_series_id_not_null;
+ALTER TABLE bookmarks RENAME CONSTRAINT bookmarks_manga_id_not_null TO bookmarks_series_id_not_null;
+ALTER TABLE collection_series RENAME CONSTRAINT collection_manga_added_at_not_null TO collection_series_added_at_not_null;
+ALTER TABLE collection_series RENAME CONSTRAINT collection_manga_collection_id_not_null TO collection_series_collection_id_not_null;
+ALTER TABLE collection_series RENAME CONSTRAINT collection_manga_manga_id_not_null TO collection_series_series_id_not_null;

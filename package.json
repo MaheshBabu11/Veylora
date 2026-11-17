@@ -1,0 +1,61 @@
+{
+  "name": "veylora",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local-first home for illustrated series across formats",
+  "author": "Veylora Contributors",
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "npm run typecheck && npm run lint && next build",
+    "build:prod": "next build && next export",
+    "start": "next start",
+    "db:migrate": "node scripts/migrate.mjs",
+    "db:reset": "node scripts/reset.mjs",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit",
+    "typecheck:watch": "tsc --noEmit --watch",
+    "analyze": "ANALYZE=true next build"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^3.10.0",
+    "@tanstack/react-query": "^5.66.0",
+    "@tanstack/react-virtual": "^3.13.0",
+    "busboy": "^1.6.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "drizzle-orm": "^0.45.4",
+    "framer-motion": "^12.4.0",
+    "lucide-react": "^0.468.0",
+    "next": "^16.4.6",
+    "pg": "^8.13.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-hook-form": "^7.54.2",
+    "zod": "^4.6.7",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.6",
+    "@types/busboy": "^1.5.5",
+    "@types/node": "^22.13.4",
+    "@types/pg": "^8.11.11",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "eslint": "^9.17.0",
+    "eslint-config-next": "^16.4.6",
+    "tailwind-merge": "^2.6.0",
+    "tailwindcss": "^4.0.6",
+    "typescript": "^5.7.3"
+  },
+  "overrides": {
+    "postcss": "^8.5.23",
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "^11.0.8"
+    }
+  },
+  "engines": {
+    "node": ">=20.9.0",
+    "npm": ">=10.0.0"
+  }
+}
