@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   ArrowUpRight, BookOpen, Bookmark, ChevronDown, Library, CircleHelp, Clock3, Compass, FolderHeart, Home, ListFilter,
   Menu, Plus, Search, Settings2, Sparkles, UsersRound, X,
-  PanelLeftClose, PanelLeftOpen, Heart,
+  PanelLeftClose, PanelLeftOpen, Heart, ShieldCheck,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -216,7 +216,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="app-sidebar-bottom">
           <div className="app-sidebar-local-card">
-            <span className="app-sidebar-local-icon"><CircleHelp size={16} /></span>
+            <span className="app-sidebar-local-icon"><ShieldCheck size={16} /></span>
             <span><strong>Your private library</strong><small>Files stay on this device</small></span>
           </div>
           <Link
