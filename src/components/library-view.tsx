@@ -115,7 +115,7 @@ export function LibraryView() {
       {isLoading ? <div className="empty-state" role="status">Loading your library…</div> : null}
       {error ? <div className="empty-state" role="alert"><h2>Could not load your library.</h2><p>{error.message}</p><button className="button button-subtle" onClick={() => void queryClient.invalidateQueries({ queryKey: ["series"] })}>Try again</button></div> : null}
       {!isLoading && !error && filtered.length === 0 ? (
-        <div className="empty-state"><div><Search size={22} /></div><h2>{data?.total === 0 ? "Your library is ready for its first book." : "No stories found."}</h2><p>{data?.total === 0 ? "Scan the books folder from Import to add your CBZ and ZIP archives." : "Try a different title, author, or filter."}</p><button className="button button-subtle" onClick={() => { setQuery(""); setGenre("All genres"); setStatus("All statuses"); }}>Clear all filters</button></div>
+        <div className="empty-state"><div><Search size={22} /></div><h2>{data?.total === 0 ? "Your library is ready for its first book." : "No stories found."}</h2><p>{data?.total === 0 ? "Scan the books folder from Import to add your CBZ, ZIP, or CBR archives." : "Try a different title, author, or filter."}</p><button className="button button-subtle" onClick={() => { setQuery(""); setGenre("All genres"); setStatus("All statuses"); }}>Clear all filters</button></div>
       ) : !isLoading && !error && view === "list" ? (
         <div className="list-view">
           {filtered.map((series) => (

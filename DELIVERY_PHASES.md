@@ -22,11 +22,11 @@ Status reflects implementation and verification in the current local environment
 ## Phase 4 — Filesystem and archives: Partial
 
 - The configured books root is canonicalized and constrained; archive pages are read in place rather than extracted to arbitrary paths.
-- `.cbz` and `.zip` page enumeration, lazy page serving, and a bounded on-disk cache are implemented.
-- The top-bar Import dialog can upload up to 100 CBZ/ZIP archives per request, assign a series title and unique chapter numbers, optionally save author/description/genre details, reject overwrites, and queue library indexing.
+- `.cbz`, `.zip`, and `.cbr` page enumeration, lazy page serving, and a bounded on-disk cache are implemented. CBR reading does not support multi-volume RAR archives.
+- The top-bar Import dialog can upload up to 100 CBZ/ZIP/CBR archives per request, assign a series title and unique chapter numbers, optionally save author/description/genre details, reject overwrites, and queue library indexing.
 - The Node server watches the configured books directory, debounces and waits for archive writes to settle, and queues indexing when archives are added or updated. Automatic scanning can be disabled in Settings; manual scans and upload indexing remain available.
 - Series details are editable, user-defined genres can be assigned to series, and custom cover images can be uploaded alongside the series archives.
-- **Pending:** CBR/RAR support, image thumbnail processing, and a durable worker with cancellation/retry. Scan jobs currently execute in the Next.js process and may not survive a restart.
+- **Pending:** Image thumbnail processing and a durable worker with cancellation/retry. Scan jobs currently execute in the Next.js process and may not survive a restart.
 
 ## Phase 5 — Persistence: Partial
 

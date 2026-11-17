@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 const MAX_FILES = 100;
 const MAX_FILE_BYTES = 2 * 1024 ** 3;
 const MAX_REQUEST_BYTES = 4 * 1024 ** 3;
-const IMAGE_ARCHIVE_EXTENSIONS = new Set([".cbz", ".zip"]);
+const IMAGE_ARCHIVE_EXTENSIONS = new Set([".cbz", ".zip", ".cbr"]);
 const optionalAuthorSchema = z.string().trim().max(160).optional();
 const optionalDescriptionSchema = z.string().trim().max(5000).optional();
 const seriesIdSchema = z.string().uuid();
@@ -83,7 +83,7 @@ async function receiveFiles(request: Request, root: string) {
     const extension = path.extname(info.filename ?? "").toLowerCase();
     if (name !== "files" || !IMAGE_ARCHIVE_EXTENSIONS.has(extension)) {
       stream.resume();
-      fail(new HttpError(400, "Upload only CBZ or ZIP archives."));
+      fail(new HttpError(400, "Upload only CBZ, ZIP, or CBR archives."));
       return;
     }
 
@@ -167,7 +167,7 @@ export async function POST(request: Request) {
     const numbers = z.array(z.coerce.number().int().min(1).max(2_147_483_647))
       .length(upload.files.length)
       .parse(upload.chapterNumbers);
-    if (!upload.files.length) throw new HttpError(400, "Choose at least one CBZ or ZIP archive.");
+    if (!upload.files.length) throw new HttpError(400, "Choose at least one CBZ, ZIP, or CBR archive.");
     if (new Set(numbers).size !== numbers.length) {
       throw new HttpError(400, "Each uploaded archive must have a different chapter number.");
     }

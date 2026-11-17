@@ -2,7 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import { ImagePlus, Save, X } from "lucide-react";
 import { useGenres } from "@/services/library";
 import { SERIES_FORMATS, type Series, type SeriesFormat } from "@/types/library";
@@ -28,6 +29,7 @@ export function EditSeriesDialog({
   onClose: () => void;
   onSave: (details: SeriesDetailsUpdate, coverFile?: File) => Promise<void>;
 }) {
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
   const { data: genres = [], isLoading: genresLoading, error: genresError } = useGenres();
   const [title, setTitle] = useState(series.title);
   const [format, setFormat] = useState<SeriesFormat>(series.format);
@@ -41,6 +43,11 @@ export function EditSeriesDialog({
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setPortalTarget(document.body));
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   const toggleGenre = (genreId: string) => {
     setGenreIds((selected) => selected.includes(genreId)
@@ -98,7 +105,7 @@ export function EditSeriesDialog({
 
   const imageSource = coverPreview ?? (!coverUnavailable ? series.coverUrl : undefined);
 
-  return (
+  const dialog = (
     <div className="overlay-backdrop edit-series-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className="edit-series-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-series-title">
         <button className="dialog-close import-close" onClick={onClose} aria-label="Close" type="button"><X size={17} /></button>
@@ -186,4 +193,5 @@ export function EditSeriesDialog({
       </section>
     </div>
   );
+  return portalTarget ? createPortal(dialog, portalTarget) : null;
 }

@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   ArrowUpRight, BookOpen, Bookmark, ChevronDown, Library, CircleHelp, Clock3, Compass, FolderHeart, Home, ListFilter,
   Menu, Plus, Search, Settings2, Sparkles, UsersRound, X,
-  PanelLeftClose, PanelLeftOpen,
+  PanelLeftClose, PanelLeftOpen, Heart,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -284,7 +284,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="content-area">{children}</div>
           <footer className="app-footer">
             <span><span className="status-indicator" /> All files stay on your device</span>
-            <button aria-label="Help and about Veylora" className="footer-help"><CircleHelp size={15} /> Made for the love of stories</button>
+            <button aria-label="Help and about Veylora" className="footer-help"><Heart size={15} /> Made for the love of stories</button>
           </footer>
         </main>
       </div>

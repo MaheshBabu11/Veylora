@@ -20,7 +20,7 @@ function suggestedChapterNumber(name: string, fallback: number) {
 }
 
 function suggestedSeriesTitle(name: string) {
-  const withoutExtension = name.replace(/\.(cbz|zip)$/i, "");
+  const withoutExtension = name.replace(/\.(cbz|zip|cbr)$/i, "");
   const title = withoutExtension.replace(/(?:chapter|ch|vol(?:ume)?)[ ._-]*\d+.*$/i, "").replace(/[._-]+/g, " ").trim();
   return title || "New Series";
 }
@@ -87,7 +87,7 @@ export function ImportDialog({ scanning, initialSeries, onClose, onScanLibrary, 
         <div className="dialog-icon"><Plus size={20} /></div>
         <p className="eyebrow">{initialSeries ? "CONTINUE READING" : "GROW YOUR COLLECTION"}</p>
         <h2 id="import-title">{initialSeries ? "Add chapters." : "Import chapters."}</h2>
-        <p className="import-description">{initialSeries ? `Upload new chapters directly to ${initialSeries.title}.` : "Add one or more CBZ/ZIP chapters to a new series or continue an existing one."}</p>
+        <p className="import-description">{initialSeries ? `Upload new chapters directly to ${initialSeries.title}.` : "Add one or more CBZ, ZIP, or CBR chapters to a new series or continue an existing one."}</p>
 
         <form className="import-upload-form" onSubmit={(event) => void submitUpload(event)}>
           {!initialSeries && <div className="import-series-mode" role="group" aria-label="Series destination">
@@ -121,7 +121,7 @@ export function ImportDialog({ scanning, initialSeries, onClose, onScanLibrary, 
           )}
           <label className="import-upload-field">
             <span>Chapter archives <b>Required</b></span>
-            <input type="file" accept=".cbz,.zip,application/zip" multiple required disabled={uploading || scanning} onChange={(event) => selectFiles(Array.from(event.currentTarget.files ?? []))} />
+            <input type="file" accept=".cbz,.zip,.cbr,application/zip,application/vnd.rar,application/x-rar-compressed" multiple required disabled={uploading || scanning} onChange={(event) => selectFiles(Array.from(event.currentTarget.files ?? []))} />
             <small>Select up to 100 chapter archives at once (2 GiB per file, 4 GiB total).</small>
           </label>
 

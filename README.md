@@ -6,7 +6,7 @@ Veylora is a local-first library and reader for manga, manhwa, manhua, webtoons,
 
 ## Features
 
-- Import and organize CBZ and ZIP chapters, with chapter numbers supplied by the user.
+- Import and organize CBZ, ZIP, and CBR chapters, with chapter numbers supplied by the user.
 - Browse and search series, edit metadata and formats, assign genres, and upload covers.
 - Read chapters in vertical or single-page mode, with reading progress saved locally.
 - Organize favorites and collections, and manage appearance and reader preferences.
@@ -26,7 +26,7 @@ Veylora is a local-first library and reader for manga, manhwa, manhua, webtoons,
 - Node.js 20.9 or newer
 - npm 10 or newer
 - PostgreSQL (the configured database must exist before running migrations)
-- A directory for your CBZ/ZIP archives
+- A directory for your CBZ/ZIP/CBR archives
 
 ## Getting started
 
@@ -75,9 +75,10 @@ Uploads are stored under `VEYLORA_BOOKS_DIR`, grouped by series and named with t
   The Example Series/
     Chapter 001.cbz
     Chapter 002.zip
+    Chapter 003.cbr
 ```
 
-The import dialog accepts up to 100 CBZ or ZIP archives per request (up to 2 GiB per archive and 4 GiB total per request). Existing files are not overwritten. Supported page images include JPG/JPEG, PNG, WebP, AVIF, and GIF. CBR/RAR archives are not currently supported.
+The import dialog accepts up to 100 CBZ, ZIP, or CBR archives per request (up to 2 GiB per archive and 4 GiB total per request). Existing files are not overwritten. Supported page images include JPG/JPEG, PNG, WebP, AVIF, and GIF. CBR reading uses `node-unrar-js`; multi-volume RAR archives are not supported.
 
 Original archives remain in the configured books directory. Veylora reads pages on demand rather than extracting archives to arbitrary locations. The cache can be cleared from the app's settings.
 
@@ -114,6 +115,6 @@ scripts/               Migration and local reset scripts
 - The app uses a single local profile and has no authentication or multi-user access controls.
 - Scan jobs run in the Next.js process and may not survive process termination.
 - Offline changes, cross-device synchronization, and automated conflict resolution are not implemented.
-- CBR/RAR support, image thumbnail generation, and production-scale performance/security validation remain outstanding.
+- Image thumbnail generation and production-scale performance/security validation remain outstanding.
 
 See [CHECKLIST.md](CHECKLIST.md) and [DELIVERY_PHASES.md](DELIVERY_PHASES.md) for implementation and remaining verification work. No license has been selected for this repository yet.

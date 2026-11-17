@@ -111,7 +111,7 @@ Quick reference for implementation priorities and progress tracking.
 
 ### Archive Support
 - [x] Support CBZ format
-- [ ] Support CBR format
+- [x] Support CBR format
 - [x] Support ZIP format
 - [x] Archive enumeration
 - [x] Infer series/chapter metadata and index archive pages
@@ -353,7 +353,7 @@ Quick reference for implementation priorities and progress tracking.
 Phase 1: ✅ 100% Complete
 Phase 2: ✅ 100% Complete
 Phase 3: 🟡 Implemented; app-runtime verification and remaining items open
-Phase 4: 🟡 Partial; durable jobs, CBR, and image processing remain
+Phase 4: 🟡 Partial; durable jobs and image processing remain
 Phase 5: 🟡 Partial; sync, exports, and several user workflows remain
 Phase 6: 🟡 Partial; optimistic updates, error boundaries, and missing hooks remain
 Phase 7: 🟡 Partial; testing, security review, load, and performance verification remain

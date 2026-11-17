@@ -79,7 +79,7 @@ export function Dashboard() {
             </>
           ) : (
             <>
-              <p className="hero-description">Import your CBZ and ZIP books to build a personal streaming library that stays right on your device.</p>
+              <p className="hero-description">Import your CBZ, ZIP, and CBR books to build a personal streaming library that stays right on your device.</p>
               <div className="hero-actions">
                 <Link href="/library" className="button hero-primary"><BookOpen size={16} /> Explore library</Link>
               </div>
