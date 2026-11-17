@@ -13,18 +13,20 @@ Status reflects implementation and verification in the current local environment
 
 ## Phase 3 — Database and API: Implemented; runtime verification pending
 
-- PostgreSQL schema and migrations `0001_initial.sql` through `0008_series_format.sql` are included in the repository.
+- PostgreSQL schema and migrations `0001_initial.sql` through `0009_automatic_library_scanning.sql` are included in the repository.
 - Drizzle schema definitions, a `pg` connection pool, migration runner, API handlers, and parameterized repository queries are present.
 - Library, chapters/pages, search, progress, preferences, collections, bookmarks, scan jobs, directories, storage, cache, and health endpoints are implemented.
-- **Pending:** app-runtime API smoke tests and representative CRUD/error-path tests against a configured local database.
+- Health and preferences endpoints have been smoke-tested against the configured local database; automatic scan discovery and job completion have also been exercised.
+- **Pending:** representative CRUD/error-path tests against a configured local database.
 
 ## Phase 4 — Filesystem and archives: Partial
 
 - The configured books root is canonicalized and constrained; archive pages are read in place rather than extracted to arbitrary paths.
 - `.cbz` and `.zip` page enumeration, lazy page serving, and a bounded on-disk cache are implemented.
 - The top-bar Import dialog can upload up to 100 CBZ/ZIP archives per request, assign a series title and unique chapter numbers, optionally save author/description/genre details, reject overwrites, and queue library indexing.
+- The Node server watches the configured books directory, debounces and waits for archive writes to settle, and queues indexing when archives are added or updated. Automatic scanning can be disabled in Settings; manual scans and upload indexing remain available.
 - Series details are editable, user-defined genres can be assigned to series, and custom cover images can be uploaded alongside the series archives.
-- **Pending:** indexing those existing files from the app runtime, CBR/RAR support, image thumbnail processing, watcher/import workflows, and a durable worker with cancellation/retry. Scan jobs currently execute in the Next.js process and may not survive a restart.
+- **Pending:** CBR/RAR support, image thumbnail processing, and a durable worker with cancellation/retry. Scan jobs currently execute in the Next.js process and may not survive a restart.
 
 ## Phase 5 — Persistence: Partial
 

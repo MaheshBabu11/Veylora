@@ -104,6 +104,7 @@ export const userPreferences = pgTable("user_preferences", {
   theme: varchar("theme", { length: 16 }).notNull().default("dark"),
   readerMode: varchar("reader_mode", { length: 16 }).notNull().default("vertical"),
   direction: varchar("direction", { length: 8 }).notNull().default("rtl"),
+  autoScan: boolean("auto_scan").notNull().default(true),
   language: varchar("language", { length: 16 }).notNull().default("en"),
   defaultView: varchar("default_view", { length: 16 }).notNull().default("grid"),
   shortcuts: jsonb("shortcuts").notNull().default({}),

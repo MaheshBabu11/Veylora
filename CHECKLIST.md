@@ -107,7 +107,7 @@ Quick reference for implementation priorities and progress tracking.
 - [x] Secure root path validation
 - [x] Prevent path traversal attacks
 - [ ] Permission checks
-- [ ] Directory watching setup
+- [x] Directory watching setup
 
 ### Archive Support
 - [x] Support CBZ format

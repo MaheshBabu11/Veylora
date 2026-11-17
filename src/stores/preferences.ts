@@ -12,6 +12,8 @@ type PreferencesState = {
   theme: Theme;
   readerMode: ReaderMode;
   direction: Direction;
+  autoScan: boolean;
+  sidebarCollapsed: boolean;
   favorites: string[];
   collections: CustomCollection[];
   progressByChapter: Record<string, number>;
@@ -19,14 +21,16 @@ type PreferencesState = {
   setTheme: (theme: Theme) => void;
   setReaderMode: (mode: ReaderMode) => void;
   setDirection: (direction: Direction) => void;
+  setAutoScan: (autoScan: boolean) => void;
+  setSidebarCollapsed: (sidebarCollapsed: boolean) => void;
   toggleFavorite: (seriesId: string) => void;
   addCollection: (title: string) => void;
   setReaderProgress: (chapterId: string, page: number) => void;
   setReadingStatus: (seriesId: string, status: string) => void;
-  hydratePreferences: (preferences: { theme: Theme; readerMode: ReaderMode; direction: Direction }) => void;
+  hydratePreferences: (preferences: { theme: Theme; readerMode: ReaderMode; direction: Direction; autoScan: boolean }) => void;
 };
 
-function savePreference(key: string, value: string) {
+function savePreference(key: string, value: string | boolean) {
   void fetch("/api/preferences", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -42,6 +46,8 @@ export const usePreferencesStore = create<PreferencesState>()(
       theme: "dark",
       readerMode: "vertical",
       direction: "rtl",
+      autoScan: true,
+      sidebarCollapsed: false,
       favorites: [],
       collections: [],
       progressByChapter: {},
@@ -49,6 +55,8 @@ export const usePreferencesStore = create<PreferencesState>()(
       setTheme: (theme) => { set({ theme }); savePreference("theme", theme); },
       setReaderMode: (readerMode) => { set({ readerMode }); savePreference("readerMode", readerMode); },
       setDirection: (direction) => { set({ direction }); savePreference("direction", direction); },
+      setAutoScan: (autoScan) => { set({ autoScan }); savePreference("autoScan", autoScan); },
+      setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
       toggleFavorite: (seriesId) => set((state) => ({
         favorites: state.favorites.includes(seriesId)
           ? state.favorites.filter((id) => id !== seriesId)
@@ -68,10 +76,12 @@ export const usePreferencesStore = create<PreferencesState>()(
     {
       name: "veylora-preferences",
       storage: createJSONStorage(() => localStorage),
-      partialize: ({ theme, readerMode, direction, favorites, collections, progressByChapter, readingStatuses }) => ({
+      partialize: ({ theme, readerMode, direction, autoScan, sidebarCollapsed, favorites, collections, progressByChapter, readingStatuses }) => ({
         theme,
         readerMode,
         direction,
+        autoScan,
+        sidebarCollapsed,
         favorites,
         collections,
         progressByChapter,

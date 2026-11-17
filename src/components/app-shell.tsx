@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   ArrowUpRight, BookOpen, Bookmark, ChevronDown, Library, CircleHelp, Clock3, Compass, FolderHeart, Home, ListFilter,
   Menu, Plus, Search, Settings2, Sparkles, UsersRound, X,
+  PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -40,6 +41,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const theme = usePreferencesStore((state) => state.theme);
   const setTheme = usePreferencesStore((state) => state.setTheme);
+  const sidebarCollapsed = usePreferencesStore((state) => state.sidebarCollapsed);
+  const setSidebarCollapsed = usePreferencesStore((state) => state.setSidebarCollapsed);
   const { data: searchData } = useSeriesList({ query: search, limit: 5, enabled: Boolean(search.trim()) });
   const searchResults = searchData?.items ?? [];
   const routePath = pathname.replace(/^\/main(?=\/|$)/, "") || "/";
@@ -85,6 +88,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       clearTimeout(timer);
     };
   }, [scanJobId, queryClient]);
+
+  useEffect(() => {
+    if (scanJobId) return;
+    let active = true;
+    const discoverScan = async () => {
+      try {
+        const job = await fetchJson<{ id: string } | null>("/api/library/scan");
+        if (!active) return;
+        if (job) {
+          setScanJobId(job.id);
+          setImportNotice("A library scan is running.");
+          return;
+        }
+      } catch {
+        return;
+      }
+    };
+    void discoverScan();
+    const discoverWhenVisible = () => {
+      if (document.visibilityState === "visible") void discoverScan();
+    };
+    document.addEventListener("visibilitychange", discoverWhenVisible);
+    return () => {
+      active = false;
+      document.removeEventListener("visibilitychange", discoverWhenVisible);
+    };
+  }, [scanJobId]);
 
   const startLibraryScan = async () => {
     try {
@@ -139,9 +169,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${sidebarCollapsed ? "sidebar-is-collapsed" : ""}`}>
       <ImportSeriesProvider onOpen={openImportForSeries}>
-      <aside className={`app-sidebar ${mobileOpen ? "mobile-open" : ""}`} aria-label="Main navigation">
+      <aside id="main-sidebar" className={`app-sidebar ${mobileOpen ? "mobile-open" : ""}`} aria-label="Main navigation">
         <Link href="/" className="brand-lockup" aria-label="Veylora home" onClick={() => setMobileOpen(false)}>
           <span className="brand-mark">V</span>
           <span className="brand-name">veylora<span>.</span></span>
@@ -157,6 +187,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   className={`nav-link ${routePath === href || (href !== "/" && routePath.startsWith(`${href}/`)) ? "active" : ""}`}
                   onClick={() => setMobileOpen(false)}
                   aria-current={routePath === href ? "page" : undefined}
+                  aria-label={label}
+                  title={label}
                 >
                   <Icon size={18} strokeWidth={1.8} /><span>{label}</span>
                 </Link>
@@ -173,6 +205,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   className={`nav-link ${routePath === href || routePath.startsWith(`${href}/`) ? "active" : ""}`}
                   onClick={() => setMobileOpen(false)}
                   aria-current={routePath === href ? "page" : undefined}
+                  aria-label={label}
+                  title={label}
                 >
                   <Icon size={18} strokeWidth={1.8} /><span>{label}</span>
                 </Link>
@@ -190,6 +224,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             className={`nav-link ${routePath === "/settings" ? "active" : ""}`}
             onClick={() => setMobileOpen(false)}
             aria-current={routePath === "/settings" ? "page" : undefined}
+            aria-label="Settings"
+            title="Settings"
           >
             <Settings2 size={18} strokeWidth={1.8} /><span>Settings</span>
           </Link>
@@ -208,6 +244,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="workspace-topbar-start">
             <button className="mobile-menu icon-button" onClick={() => setMobileOpen((value) => !value)} aria-label="Toggle navigation" aria-expanded={mobileOpen}>
               {mobileOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
+            <button
+              type="button"
+              className="sidebar-collapse-toggle icon-button"
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-controls="main-sidebar"
+              aria-expanded={!sidebarCollapsed}
+              title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
             </button>
             <Link href="/" className="brand-lockup mobile-brand" aria-label="Veylora home">
               <span className="brand-mark">V</span>

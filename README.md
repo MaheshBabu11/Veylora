@@ -10,6 +10,7 @@ Veylora is a local-first library and reader for manga, manhwa, manhua, webtoons,
 - Browse and search series, edit metadata and formats, assign genres, and upload covers.
 - Read chapters in vertical or single-page mode, with reading progress saved locally.
 - Organize favorites and collections, and manage appearance and reader preferences.
+- Automatically detect added or updated archives and queue library indexing; automatic scanning can be disabled in Settings.
 - Keep original archives in a configurable directory; serve pages on demand and cache them locally.
 - Track scans and view library and cache storage usage.
 

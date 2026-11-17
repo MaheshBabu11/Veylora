@@ -14,7 +14,7 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void fetch("/api/preferences").then(async (response) => {
       if (!response.ok) throw new Error(`Could not load preferences (${response.status}).`);
-      const preferences = await response.json() as { theme: "dark" | "light" | "system"; readerMode: "vertical" | "single"; direction: "rtl" | "ltr" };
+      const preferences = await response.json() as { theme: "dark" | "light" | "system"; readerMode: "vertical" | "single"; direction: "rtl" | "ltr"; autoScan: boolean };
       usePreferencesStore.getState().hydratePreferences(preferences);
     }).catch((error: unknown) => console.error("[preferences] unable to load preferences", error));
   }, []);
