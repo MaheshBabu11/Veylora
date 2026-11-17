@@ -16,7 +16,7 @@ const subscribeToViewport = (callback: () => void) => {
   window.addEventListener("resize", callback);
   return () => window.removeEventListener("resize", callback);
 };
-const getViewportColumns = () => window.innerWidth <= 650 ? 2 : 4;
+const getViewportColumns = () => window.innerWidth <= 650 ? 2 : window.innerWidth <= 1180 ? 4 : 5;
 
 export function LibraryView() {
   const [query, setQuery] = useState("");

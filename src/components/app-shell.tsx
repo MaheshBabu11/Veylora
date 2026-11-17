@@ -42,6 +42,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const setTheme = usePreferencesStore((state) => state.setTheme);
   const { data: searchData } = useSeriesList({ query: search, limit: 5, enabled: Boolean(search.trim()) });
   const searchResults = searchData?.items ?? [];
+  const routePath = pathname.replace(/^\/main(?=\/|$)/, "") || "/";
+  const navigationLinks = [...primaryLinks, ...discoverLinks, { href: "/settings", label: "Settings", icon: Settings2 }];
+  const currentPage = navigationLinks.find(({ href }) =>
+    routePath === href || (href !== "/" && routePath.startsWith(`${href}/`)),
+  )?.label ?? (routePath.startsWith("/reader/") ? "Reader" : "Series details");
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -136,46 +141,106 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="app-shell">
       <ImportSeriesProvider onOpen={openImportForSeries}>
-      <header className={`sidebar stream-header ${mobileOpen ? "mobile-open" : ""}`}>
-        <Link href="/" className="brand-lockup" aria-label="Veylora home">
+      <aside className={`app-sidebar ${mobileOpen ? "mobile-open" : ""}`} aria-label="Main navigation">
+        <Link href="/" className="brand-lockup" aria-label="Veylora home" onClick={() => setMobileOpen(false)}>
           <span className="brand-mark">V</span>
           <span className="brand-name">veylora<span>.</span></span>
         </Link>
-        <button className="mobile-menu icon-button" onClick={() => setMobileOpen((value) => !value)} aria-label="Toggle navigation" aria-expanded={mobileOpen}>
-          {mobileOpen ? <X size={20} /> : <Menu size={20} />}
-        </button>
-        <nav className="nav-list stream-nav-links" aria-label="Main navigation">
-          {[...primaryLinks, ...discoverLinks].map(({ href, label, icon: Icon }) => (
-            <Link key={href} href={href} className={`nav-link ${pathname === href ? "active" : ""}`} onClick={() => setMobileOpen(false)}>
-              <Icon size={16} strokeWidth={1.8} /><span>{label}</span>
-            </Link>
-          ))}
-          <Link href="/settings" className={`nav-link ${pathname === "/settings" ? "active" : ""}`} onClick={() => setMobileOpen(false)}>
-            <Settings2 size={16} strokeWidth={1.8} /><span>Settings</span>
-          </Link>
+        <nav className="app-sidebar-nav">
+          <div className="app-sidebar-group">
+            <span className="sidebar-label">YOUR LIBRARY</span>
+            <div className="app-sidebar-links">
+              {primaryLinks.map(({ href, label, icon: Icon }) => (
+                <Link
+                  key={href}
+                  href={href}
+                  className={`nav-link ${routePath === href || (href !== "/" && routePath.startsWith(`${href}/`)) ? "active" : ""}`}
+                  onClick={() => setMobileOpen(false)}
+                  aria-current={routePath === href ? "page" : undefined}
+                >
+                  <Icon size={18} strokeWidth={1.8} /><span>{label}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+          <div className="app-sidebar-group">
+            <span className="sidebar-label">EXPLORE</span>
+            <div className="app-sidebar-links">
+              {discoverLinks.map(({ href, label, icon: Icon }) => (
+                <Link
+                  key={href}
+                  href={href}
+                  className={`nav-link ${routePath === href || routePath.startsWith(`${href}/`) ? "active" : ""}`}
+                  onClick={() => setMobileOpen(false)}
+                  aria-current={routePath === href ? "page" : undefined}
+                >
+                  <Icon size={18} strokeWidth={1.8} /><span>{label}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
         </nav>
-        <div className="topbar-actions stream-nav-actions">
-          <button className="search-trigger" onClick={() => setSearchOpen(true)} aria-label="Search your library">
-            <Search size={16} /><span>Search titles</span><kbd>⌘ K</kbd>
-          </button>
-          <button className="theme-toggle" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}>
-            <span className={`theme-toggle-dot ${theme === "light" ? "light" : ""}`} />
-            <span>{theme[0].toUpperCase() + theme.slice(1)}</span>
-            <ChevronDown size={13} />
-          </button>
-          <button className="import-button" onClick={() => { setImportSeries(null); setImportOpen(true); }}>
-            <Plus size={16} /><span>Import</span>
-          </button>
+        <div className="app-sidebar-bottom">
+          <div className="app-sidebar-local-card">
+            <span className="app-sidebar-local-icon"><CircleHelp size={16} /></span>
+            <span><strong>Your private library</strong><small>Files stay on this device</small></span>
+          </div>
+          <Link
+            href="/settings"
+            className={`nav-link ${routePath === "/settings" ? "active" : ""}`}
+            onClick={() => setMobileOpen(false)}
+            aria-current={routePath === "/settings" ? "page" : undefined}
+          >
+            <Settings2 size={18} strokeWidth={1.8} /><span>Settings</span>
+          </Link>
         </div>
-      </header>
+      </aside>
+      <button
+        type="button"
+        className={`sidebar-scrim ${mobileOpen ? "visible" : ""}`}
+        aria-label="Close navigation"
+        tabIndex={mobileOpen ? 0 : -1}
+        onClick={() => setMobileOpen(false)}
+      />
 
-      <main className="main-area">
-        <div className="content-area">{children}</div>
-        <footer className="app-footer">
-          <span><span className="status-indicator" /> All files stay on your device</span>
-          <button aria-label="Help and about Vaylora" className="footer-help"><CircleHelp size={15} /> Made for the love of stories</button>
-        </footer>
-      </main>
+      <div className="app-workspace">
+        <header className="workspace-topbar">
+          <div className="workspace-topbar-start">
+            <button className="mobile-menu icon-button" onClick={() => setMobileOpen((value) => !value)} aria-label="Toggle navigation" aria-expanded={mobileOpen}>
+              {mobileOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
+            <Link href="/" className="brand-lockup mobile-brand" aria-label="Veylora home">
+              <span className="brand-mark">V</span>
+              <span className="brand-name">veylora<span>.</span></span>
+            </Link>
+            <div className="workspace-page-context">
+              <span>YOUR SPACE</span>
+              <strong>{currentPage}</strong>
+            </div>
+          </div>
+          <div className="workspace-topbar-actions">
+            <button className="search-trigger" onClick={() => setSearchOpen(true)} aria-label="Search your library">
+              <Search size={16} /><span>Search your library</span><kbd>⌘ K</kbd>
+            </button>
+            <button className="theme-toggle" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}>
+              <span className={`theme-toggle-dot ${theme === "light" ? "light" : ""}`} />
+              <span>{theme[0].toUpperCase() + theme.slice(1)}</span>
+              <ChevronDown size={13} />
+            </button>
+            <button className="import-button" onClick={() => { setImportSeries(null); setImportOpen(true); }}>
+              <Plus size={16} /><span>Import books</span>
+            </button>
+          </div>
+        </header>
+
+        <main className="main-area">
+          <div className="content-area">{children}</div>
+          <footer className="app-footer">
+            <span><span className="status-indicator" /> All files stay on your device</span>
+            <button aria-label="Help and about Veylora" className="footer-help"><CircleHelp size={15} /> Made for the love of stories</button>
+          </footer>
+        </main>
+      </div>
 
       {searchOpen && (
         <div className="overlay-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setSearchOpen(false)}>
