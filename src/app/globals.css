@@ -1711,6 +1711,55 @@ html[data-theme="system"] .dashboard-ritual-copy small { color: var(--text-muted
 }
 .workspace-topbar-actions .theme-toggle:hover { color: var(--text); background: var(--surface-hover); }
 .workspace-topbar-actions .import-button { min-height: 39px; }
+.account-control {
+  width: 40px;
+  height: 40px;
+  display: inline-grid;
+  flex: 0 0 40px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--surface-border);
+  border-radius: 50%;
+  color: var(--text);
+  background: var(--surface-2);
+  cursor: pointer;
+  transition: color .18s ease, border-color .18s ease, background .18s ease;
+}
+.account-control:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 40%, var(--surface-border)); background: var(--surface-hover); }
+.account-control svg { color: var(--accent); }
+.account-backdrop { align-items: center; padding-top: 30px; padding-bottom: 30px; }
+.account-dialog {
+  width: min(460px, 100%);
+  max-height: min(780px, 100%);
+  overflow: auto;
+  padding: 25px;
+  border: 1px solid var(--surface-border);
+  border-radius: 18px;
+  color: var(--text);
+  background: var(--surface-1);
+  box-shadow: 0 28px 90px #00000055;
+  animation: dialog-in .2s ease both;
+}
+.account-dialog-header { display: flex; align-items: center; gap: 13px; }
+.account-dialog-avatar { width: 42px; height: 42px; display: grid; flex: 0 0 42px; place-items: center; border: 1px solid var(--surface-border); border-radius: 50%; color: var(--accent); background: var(--accent-wash); }
+.account-dialog-header > div { min-width: 0; flex: 1; }
+.account-dialog-header .eyebrow { margin: 0 0 5px; font-size: 8px; }
+.account-dialog-header h2 { margin: 0; color: var(--text); font-family: var(--serif); font-size: 22px; font-weight: 400; }
+.account-dialog-description { margin: 17px 0 20px; color: var(--text-muted); font-size: 11px; line-height: 1.6; }
+.account-form { display: grid; gap: 8px; }
+.account-form > label { margin-top: 4px; color: var(--text-soft); font-size: 10px; font-weight: 600; }
+.account-input-wrap { min-height: 41px; display: flex; align-items: center; gap: 10px; padding: 0 11px; border: 1px solid var(--surface-border); border-radius: 9px; color: var(--text-muted); background: var(--surface-2); }
+.account-input-wrap:focus-within { border-color: color-mix(in srgb, var(--accent) 65%, var(--surface-border)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
+.account-input-wrap input { width: 100%; min-width: 0; height: 39px; padding: 0; border: 0; outline: 0; color: var(--text); background: transparent; font: inherit; font-size: 11px; }
+.account-input-wrap input::placeholder { color: var(--text-muted); }
+.account-form-divider { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 12px 0 2px; padding-top: 13px; border-top: 1px solid var(--surface-border); }
+.account-form-divider span { color: var(--text); font-family: var(--serif); font-size: 16px; }
+.account-form-divider small { color: var(--text-muted); font-size: 9px; text-align: right; }
+.account-form-message { margin: 4px 0 0; color: #ff9a9a; font-size: 10px; }
+.account-form-message.success { color: var(--accent); }
+.account-dialog-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding-top: 14px; border-top: 1px solid var(--surface-border); }
+.account-signout { min-height: 35px; display: inline-flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid transparent; border-radius: 8px; color: var(--text-muted); background: transparent; font: inherit; font-size: 10px; cursor: pointer; }
+.account-signout:hover { color: #e58e8e; border-color: color-mix(in srgb, #e58e8e 30%, var(--surface-border)); background: color-mix(in srgb, #e58e8e 8%, transparent); }
 .main-area { width: 100%; min-height: 0; flex: 1; }
 .content-area { max-width: 1600px; padding: 30px clamp(22px, 3vw, 46px) 34px; }
 .app-footer { padding: 14px clamp(22px, 3vw, 46px) 18px; }
@@ -1859,6 +1908,7 @@ html[data-theme="system"] .dashboard-ritual-copy small { color: var(--text-muted
   .workspace-topbar-actions .theme-toggle { width: 32px; min-height: 34px; justify-content: center; padding: 0; }
   .workspace-topbar-actions .import-button { width: 36px; min-width: 36px; min-height: 36px; padding: 0; }
   .workspace-topbar-actions .import-button > span { display: none; }
+  .account-control { width: 35px; height: 35px; flex-basis: 35px; }
   .content-area { padding: 21px 16px 27px; }
   .app-footer { padding: 12px 16px 16px; }
   .dashboard-page { margin: 0; }

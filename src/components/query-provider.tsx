@@ -1,8 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { fetchJson, useSession } from "@/services/library";
 import { usePreferencesStore } from "@/stores/preferences";
+
+function PreferencesHydrator() {
+  const { data: user } = useSession();
+  const { data: preferences } = useQuery({
+    queryKey: ["preferences", user?.id],
+    queryFn: () => fetchJson<{ theme: "dark" | "light" | "system"; readerMode: "vertical" | "single"; direction: "rtl" | "ltr"; autoScan: boolean }>("/api/preferences"),
+    enabled: Boolean(user),
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (preferences) usePreferencesStore.getState().hydratePreferences(preferences);
+  }, [preferences]);
+
+  return null;
+}
 
 export function QueryProvider({ children }: { children: React.ReactNode }) {
   const [client] = useState(() => new QueryClient({
@@ -11,12 +28,5 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
       mutations: { retry: 0 },
     },
   }));
-  useEffect(() => {
-    void fetch("/api/preferences").then(async (response) => {
-      if (!response.ok) throw new Error(`Could not load preferences (${response.status}).`);
-      const preferences = await response.json() as { theme: "dark" | "light" | "system"; readerMode: "vertical" | "single"; direction: "rtl" | "ltr"; autoScan: boolean };
-      usePreferencesStore.getState().hydratePreferences(preferences);
-    }).catch((error: unknown) => console.error("[preferences] unable to load preferences", error));
-  }, []);
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  return <QueryClientProvider client={client}><PreferencesHydrator />{children}</QueryClientProvider>;
 }

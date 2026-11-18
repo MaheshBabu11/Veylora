@@ -3,6 +3,7 @@ import { HttpError } from "./http";
 import { SERIES_FORMATS } from "@/types/library";
 
 export type SeriesFilters = {
+  userId: string;
   query?: string;
   status?: string;
   genre?: string;
@@ -13,8 +14,12 @@ export type SeriesFilters = {
   id?: string;
 };
 
+const userSeriesJoin = "FROM series m LEFT JOIN user_series us ON us.user_id = $1 AND us.series_id = m.id";
+
 const seriesSql = `
-  SELECT m.id, m.title, m.format, m.description, m.status, m.favorite, m.featured, m.created_at, m.updated_at,
+  SELECT m.id, m.title, m.format, m.description,
+    COALESCE(us.status, 'Plan to read') AS status, COALESCE(us.favorite, false) AS favorite,
+    m.featured, m.created_at, m.updated_at,
     m.cover_path, COALESCE(array_to_string(authors.names, ', '), 'Unknown author') AS author,
     COALESCE(genres.names, ARRAY[]::text[]) AS genres,
     COALESCE(genres.ids, ARRAY[]::text[]) AS genre_ids,
@@ -23,7 +28,7 @@ const seriesSql = `
     COALESCE(progress.chapter_number, 0)::int AS read_chapters,
     progress.chapter_id AS last_chapter_id,
     history.read_at AS last_read
-  FROM series m
+  ${userSeriesJoin}
   LEFT JOIN LATERAL (
     SELECT array_agg(DISTINCT a.name ORDER BY a.name) AS names
     FROM series_authors ma JOIN authors a ON a.id = ma.author_id WHERE ma.series_id = m.id
@@ -39,11 +44,11 @@ const seriesSql = `
   LEFT JOIN LATERAL (
     SELECT c.id AS chapter_id, c.chapter_number FROM reading_progress rp
     JOIN chapters c ON c.id = rp.last_chapter_id
-    WHERE rp.user_id = 'local' AND rp.series_id = m.id
+    WHERE rp.user_id = $1 AND rp.series_id = m.id
   ) progress ON true
   LEFT JOIN LATERAL (
     SELECT h.read_at FROM reading_history h
-    WHERE h.user_id = 'local' AND h.series_id = m.id ORDER BY h.read_at DESC LIMIT 1
+    WHERE h.user_id = $1 AND h.series_id = m.id ORDER BY h.read_at DESC LIMIT 1
   ) history ON true`;
 
 const colorSets = [
@@ -87,7 +92,8 @@ export function toSeries(row: Record<string, unknown>) {
   };
 }
 
-export async function listSeries(filters: SeriesFilters = {}) {
+export async function listSeries(filters: SeriesFilters) {
+  const userId = filters.userId;
   const query = filters.query?.trim() || null;
   const status = filters.status || null;
   const genre = filters.genre || null;
@@ -96,36 +102,37 @@ export async function listSeries(filters: SeriesFilters = {}) {
   const limit = Math.min(Math.max(filters.limit ?? 100, 1), 500);
   const offset = Math.max(filters.offset ?? 0, 0);
   const sort = filters.sort === "title" ? "m.title ASC" : filters.sort === "updated" ? "m.updated_at DESC" : "m.created_at DESC";
-  const filterSql = `WHERE ($1::text IS NULL OR m.search_vector @@ plainto_tsquery('simple', $1) OR m.title ILIKE '%' || $1 || '%')
-    AND ($2::text IS NULL OR m.status = $2)
-    AND ($3::text IS NULL OR EXISTS (SELECT 1 FROM series_genres mg JOIN genres g ON g.id = mg.genre_id WHERE mg.series_id = m.id AND g.name = $3))
-    AND ($4::uuid IS NULL OR m.id = $4)
-    AND ($5::boolean IS NULL OR m.featured = $5)`;
-  const countResult = await pool.query(`SELECT count(*)::int AS total FROM series m ${filterSql}`, [query, status, genre, id, featuredOnly]);
-  const result = await pool.query(`${seriesSql} ${filterSql} ORDER BY ${sort} LIMIT $6 OFFSET $7`, [query, status, genre, id, featuredOnly, limit, offset]);
+  const filterSql = `WHERE ($2::text IS NULL OR m.search_vector @@ plainto_tsquery('simple', $2) OR m.title ILIKE '%' || $2 || '%')
+    AND ($3::text IS NULL OR COALESCE(us.status, 'Plan to read') = $3)
+    AND ($4::text IS NULL OR EXISTS (SELECT 1 FROM series_genres mg JOIN genres g ON g.id = mg.genre_id WHERE mg.series_id = m.id AND g.name = $4))
+    AND ($5::uuid IS NULL OR m.id = $5)
+    AND ($6::boolean IS NULL OR m.featured = $6)`;
+  const params = [userId, query, status, genre, id, featuredOnly];
+  const countResult = await pool.query(`SELECT count(*)::int AS total ${userSeriesJoin} ${filterSql}`, params);
+  const result = await pool.query(`${seriesSql} ${filterSql} ORDER BY ${sort} LIMIT $7 OFFSET $8`, [...params, limit, offset]);
   return { items: result.rows.map(toSeries), total: countResult.rows[0].total as number, limit, offset };
 }
 
-export async function getSeries(id: string) {
-  const result = await listSeries({ id, limit: 1 });
+export async function getSeries(id: string, userId: string) {
+  const result = await listSeries({ id, limit: 1, userId });
   if (!result.items.length) throw new HttpError(404, "Title not found.");
   return result.items[0];
 }
 
-export async function listChapters(seriesId: string) {
+export async function listChapters(seriesId: string, userId: string) {
   const seriesExists = await pool.query("SELECT 1 FROM series WHERE id = $1", [seriesId]);
   if (!seriesExists.rowCount) throw new HttpError(404, "Title not found.");
   const result = await pool.query(
     `SELECT c.id, c.chapter_number, c.title, c.page_count, c.created_at, rp.last_page,
       COALESCE(rp.updated_at, history.read_at) AS last_read
-     FROM chapters c LEFT JOIN reading_progress rp ON rp.last_chapter_id = c.id AND rp.user_id = 'local'
+     FROM chapters c LEFT JOIN reading_progress rp ON rp.last_chapter_id = c.id AND rp.user_id = $2
      LEFT JOIN LATERAL (
        SELECT h.read_at FROM reading_history h
-       WHERE h.user_id = 'local' AND h.chapter_id = c.id
+       WHERE h.user_id = $2 AND h.chapter_id = c.id
        ORDER BY h.read_at DESC LIMIT 1
      ) history ON true
      WHERE c.series_id = $1 ORDER BY c.chapter_number`,
-    [seriesId],
+    [seriesId, userId],
   );
   return result.rows;
 }

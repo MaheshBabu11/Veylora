@@ -15,6 +15,7 @@ export type Chapter = {
 };
 export type ChapterPage = { pageNumber: number; url: string };
 export type ChapterDetail = Chapter & { id: string; series_id: string; series: Series };
+export type AuthUser = { id: string; username: string };
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
@@ -44,6 +45,14 @@ export function useSeriesList(options: { query?: string; status?: string; genre?
     queryKey: ["series", options],
     queryFn: () => fetchJson<SeriesListResult>(`/api/series?${suffix}`),
     enabled: options.enabled ?? true,
+  });
+}
+
+export function useSession() {
+  return useQuery({
+    queryKey: ["auth", "session"],
+    queryFn: () => fetchJson<AuthUser | null>("/api/auth/session"),
+    retry: false,
   });
 }
 

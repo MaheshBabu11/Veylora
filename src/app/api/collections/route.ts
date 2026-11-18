@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { pool } from "@/server/db";
 import { apiError, HttpError, readJson } from "@/server/http";
+import { getRequestUser } from "@/server/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,13 +12,15 @@ const createCollectionSchema = z.object({
   seriesIds: z.array(z.string().uuid()).max(500).default([]),
 });
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { id: userId } = getRequestUser(request);
     const result = await pool.query(
       `SELECT c.id, c.name, c.description, c.created_at,
         COALESCE(array_agg(cm.series_id) FILTER (WHERE cm.series_id IS NOT NULL), ARRAY[]::uuid[]) AS series_ids
        FROM collections c LEFT JOIN collection_series cm ON cm.collection_id = c.id
-       WHERE c.user_id = 'local' GROUP BY c.id ORDER BY c.created_at DESC`,
+       WHERE c.user_id = $1 GROUP BY c.id ORDER BY c.created_at DESC`,
+      [userId],
     );
     return Response.json(result.rows, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
@@ -28,13 +31,14 @@ export async function GET() {
 export async function POST(request: Request) {
   const client = await pool.connect();
   try {
+    const { id: userId } = getRequestUser(request);
     const { name, description, seriesIds } = createCollectionSchema.parse(await readJson(request));
     await client.query("BEGIN");
     const result = await client.query(
-      `INSERT INTO collections(user_id, name, description) VALUES ('local', $1, $2)
+      `INSERT INTO collections(user_id, name, description) VALUES ($1, $2, $3)
        ON CONFLICT(user_id, name) DO UPDATE SET description = EXCLUDED.description
        RETURNING id, name, description, created_at`,
-      [name, description],
+      [userId, name, description],
     );
     const collection = result.rows[0];
     for (const seriesId of seriesIds) {

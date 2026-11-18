@@ -1,0 +1,187 @@
+.page {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background:
+    radial-gradient(ellipse at 18% 18%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 38%),
+    radial-gradient(ellipse at 85% 85%, rgba(116, 95, 155, 0.13), transparent 35%),
+    var(--page);
+}
+
+.card {
+  width: min(100%, 430px);
+  padding: 42px;
+  border: 1px solid var(--surface-border);
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.3);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 20px;
+  letter-spacing: -0.06em;
+}
+
+.brand > span {
+  display: grid;
+  width: 35px;
+  height: 35px;
+  place-items: center;
+  border-radius: 11px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+}
+
+.brand strong > span {
+  color: var(--accent);
+}
+
+.eyebrow {
+  margin: 38px 0 12px;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+
+.card h1 {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: clamp(29px, 7vw, 38px);
+  font-weight: 500;
+  letter-spacing: -0.055em;
+  line-height: 1.1;
+}
+
+.description {
+  margin: 12px 0 25px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 23px;
+  padding: 4px;
+  border: 1px solid var(--surface-border);
+  border-radius: 11px;
+  background: var(--surface-1);
+}
+
+.switch button {
+  min-height: 36px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.switch .selected {
+  color: var(--text);
+  background: var(--surface-3);
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.2);
+}
+
+.card form {
+  display: grid;
+  gap: 9px;
+}
+
+.card label {
+  margin-top: 7px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.card input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 13px;
+  border: 1px solid var(--surface-border);
+  border-radius: 9px;
+  outline: 0;
+  color: var(--text);
+  background: var(--surface-1);
+  font: inherit;
+  font-size: 13px;
+}
+
+.card input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.card input::placeholder {
+  color: var(--muted);
+}
+
+.submit {
+  display: flex;
+  min-height: 45px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 13px;
+  border: 0;
+  border-radius: 9px;
+  color: #171519;
+  background: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.submit:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.spinner {
+  animation: spin 0.9s linear infinite;
+}
+
+.error {
+  margin: 3px 0;
+  color: #ff9a9a;
+  font-size: 12px;
+}
+
+.privacy {
+  margin: 21px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 520px) {
+  .page { padding: 16px; }
+  .card { padding: 30px 24px; }
+}

@@ -74,19 +74,9 @@ export const usePreferencesStore = create<PreferencesState>()(
       hydratePreferences: (preferences) => set(preferences),
     }),
     {
-      name: "veylora-preferences",
+      name: "veylora-ui-state-v2",
       storage: createJSONStorage(() => localStorage),
-      partialize: ({ theme, readerMode, direction, autoScan, sidebarCollapsed, favorites, collections, progressByChapter, readingStatuses }) => ({
-        theme,
-        readerMode,
-        direction,
-        autoScan,
-        sidebarCollapsed,
-        favorites,
-        collections,
-        progressByChapter,
-        readingStatuses,
-      }),
+      partialize: ({ sidebarCollapsed }) => ({ sidebarCollapsed }),
     },
   ),
 );

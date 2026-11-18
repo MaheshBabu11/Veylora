@@ -2,14 +2,15 @@
 
 Veylora is a local-first library and reader for manga, manhwa, manhua, webtoons, and comics. It keeps archive files on your filesystem and uses PostgreSQL for series metadata, reading progress, preferences, bookmarks, collections, and library scan records.
 
-> **Project status:** Veylora is under active development and is intended for trusted local use. It does not currently provide user authentication, offline mutation sync, or durable background workers. Do not expose it directly to the public internet.
+> **Project status:** Veylora is under active development and intended for trusted local use. It supports local username/password accounts, but does not yet include administrator roles, invitations, password recovery, or durable background workers. Do not expose it directly to the public internet.
 
 ## Features
 
 - Import and organize CBZ, ZIP, and CBR chapters, with chapter numbers supplied by the user.
 - Browse and search series, edit metadata and formats, assign genres, and upload covers.
-- Read chapters in vertical or single-page mode, with reading progress saved locally.
+- Read chapters in vertical or single-page mode, with reading progress saved per account.
 - Organize favorites and collections, and manage appearance and reader preferences.
+- Manage account usernames and passwords from the profile dialog.
 - Automatically detect added or updated archives and queue library indexing; automatic scanning can be disabled in Settings.
 - Keep original archives in a configurable directory; serve pages on demand and cache them locally.
 - Track scans and view library and cache storage usage.
@@ -55,6 +56,8 @@ Veylora is a local-first library and reader for manga, manhwa, manhua, webtoons,
 
 4. Open [http://localhost:3000](http://localhost:3000). The `/api/health` endpoint checks database connectivity and that the configured archive directory is available.
 
+5. Create the first account from the sign-in page. It adopts the existing `local` profile so its reading data is preserved; further accounts can be registered there. Each account has its own reading progress, status, favorites, bookmarks, collections, and personal preferences. The archive library and metadata are shared.
+
 ## Configuration
 
 | Variable | Required | Default | Description |
@@ -63,6 +66,8 @@ Veylora is a local-first library and reader for manga, manhwa, manhua, webtoons,
 | `VEYLORA_BOOKS_DIR` | No | `/mnt/data/Docker/books` | Directory containing uploaded and existing archives. |
 | `VEYLORA_CACHE_DIR` | No | `./storage/cache` | On-disk cache for pages served from archives. |
 | `DATABASE_POOL_SIZE` | No | `10` | Maximum PostgreSQL connections in the application pool. |
+
+Account registration is open to users who can reach the app. Use it only on a trusted network; the app currently has no invitation or administrator controls. Automatic scanning is a shared library setting.
 
 The application expects the PostgreSQL database to be created in advance. `npm run db:migrate` applies the SQL files in `drizzle/migrations`.
 
@@ -112,7 +117,7 @@ scripts/               Migration and local reset scripts
 
 ## Current limitations
 
-- The app uses a single local profile and has no authentication or multi-user access controls.
+- User registration is open, and there are no administrator roles, invitations, or password recovery.
 - Scan jobs run in the Next.js process and may not survive process termination.
 - Offline changes, cross-device synchronization, and automated conflict resolution are not implemented.
 - Image thumbnail generation and production-scale performance/security validation remain outstanding.

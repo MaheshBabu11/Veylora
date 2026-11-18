@@ -4,7 +4,9 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["node-unrar-js"],
   // Security & Performance Headers
   poweredByHeader: false,
-  
+
+  allowedDevOrigins: ['192.168.1.37'],
+
   // Optimization settings
   compress: true,
   reactStrictMode: true,
@@ -31,6 +33,7 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_VERSION: "0.1.0-alpha",
   },
+
   async rewrites() {
     return [
       { source: "/library", destination: "/main/library" },

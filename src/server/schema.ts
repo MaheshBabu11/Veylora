@@ -23,13 +23,30 @@ export const libraryDirectories = pgTable("library_directories", {
   createdAt: createdAt(),
 });
 
+export const users = pgTable("users", {
+  id: text("id").primaryKey(),
+  username: text("username").notNull().unique(),
+  passwordHash: text("password_hash"),
+  createdAt: createdAt(),
+});
+
+export const userSessions = pgTable("user_sessions", {
+  tokenHash: text("token_hash").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: createdAt(),
+}, (table) => [index("user_sessions_user_idx").on(table.userId), index("user_sessions_expiry_idx").on(table.expiresAt)]);
+
+export const librarySettings = pgTable("library_settings", {
+  singleton: boolean("singleton").primaryKey().default(true),
+  autoScan: boolean("auto_scan").notNull().default(true),
+});
+
 export const series = pgTable("series", {
   id: uuid("id").primaryKey().defaultRandom(),
   title: text("title").notNull(),
   format: varchar("format", { length: 24 }).notNull().default("Manga"),
   description: text("description").notNull().default(""),
-  status: varchar("status", { length: 24 }).notNull().default("Plan to read"),
-  favorite: boolean("favorite").notNull().default(false),
   featured: boolean("featured").notNull().default(false),
   coverPath: text("cover_path"),
   customCoverPath: text("custom_cover_path"),
@@ -40,7 +57,18 @@ export const series = pgTable("series", {
   directoryId: uuid("directory_id").references(() => libraryDirectories.id, { onDelete: "set null" }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-}, (table) => [index("series_title_idx").on(table.title), index("series_status_idx").on(table.status)]);
+}, (table) => [index("series_title_idx").on(table.title)]);
+
+export const userSeries = pgTable("user_series", {
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  seriesId: uuid("series_id").notNull().references(() => series.id, { onDelete: "cascade" }),
+  status: varchar("status", { length: 24 }).notNull().default("Plan to read"),
+  favorite: boolean("favorite").notNull().default(false),
+  updatedAt: updatedAt(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.seriesId] }),
+  index("user_series_status_idx").on(table.userId, table.status),
+]);
 
 export const chapters = pgTable("chapters", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -104,7 +132,6 @@ export const userPreferences = pgTable("user_preferences", {
   theme: varchar("theme", { length: 16 }).notNull().default("dark"),
   readerMode: varchar("reader_mode", { length: 16 }).notNull().default("vertical"),
   direction: varchar("direction", { length: 8 }).notNull().default("rtl"),
-  autoScan: boolean("auto_scan").notNull().default(true),
   language: varchar("language", { length: 16 }).notNull().default("en"),
   defaultView: varchar("default_view", { length: 16 }).notNull().default("grid"),
   shortcuts: jsonb("shortcuts").notNull().default({}),

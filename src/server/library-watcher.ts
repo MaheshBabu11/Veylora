@@ -68,7 +68,7 @@ function schedulePendingScan(paths: Iterable<string>, delay = DEBOUNCE_MS) {
 
 async function isAutomaticScanningEnabled() {
   const result = await pool.query<{ autoScan: boolean }>(
-    "SELECT auto_scan AS \"autoScan\" FROM user_preferences WHERE user_id = 'local'",
+    "SELECT auto_scan AS \"autoScan\" FROM library_settings WHERE singleton = true",
   );
   return result.rows[0]?.autoScan ?? true;
 }

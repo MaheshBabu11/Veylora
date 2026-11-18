@@ -3,16 +3,17 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  ArrowUpRight, BookOpen, Bookmark, ChevronDown, Library, CircleHelp, Clock3, Compass, FolderHeart, Home, ListFilter,
+  ArrowUpRight, BookOpen, Bookmark, ChevronDown, CircleUserRound, KeyRound, Library, Clock3, Compass, FolderHeart, Home, ListFilter,
   Menu, Plus, Search, Settings2, Sparkles, UsersRound, X,
-  PanelLeftClose, PanelLeftOpen, Heart, ShieldCheck,
+  PanelLeftClose, PanelLeftOpen, Heart, ShieldCheck, LogOut, UserRound,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ImportDialog } from "@/components/import-dialog";
 import { ImportSeriesProvider, type ImportSeriesTarget } from "@/components/import-series-context";
 import { usePreferencesStore } from "@/stores/preferences";
-import { fetchJson, useSeriesList } from "@/services/library";
+import { fetchJson, useSeriesList, useSession } from "@/services/library";
 import type { BookUploadResult } from "@/services/import";
 
 const primaryLinks = [
@@ -38,7 +39,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [importSeries, setImportSeries] = useState<ImportSeriesTarget | null>(null);
   const [importNotice, setImportNotice] = useState("");
   const [scanJobId, setScanJobId] = useState("");
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [accountUsername, setAccountUsername] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [accountBusy, setAccountBusy] = useState(false);
+  const [accountMessage, setAccountMessage] = useState("");
   const queryClient = useQueryClient();
+  const { data: user } = useSession();
   const theme = usePreferencesStore((state) => state.theme);
   const setTheme = usePreferencesStore((state) => state.setTheme);
   const sidebarCollapsed = usePreferencesStore((state) => state.sidebarCollapsed);
@@ -50,6 +59,55 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const currentPage = navigationLinks.find(({ href }) =>
     routePath === href || (href !== "/" && routePath.startsWith(`${href}/`)),
   )?.label ?? (routePath.startsWith("/reader/") ? "Reader" : "Series details");
+
+  const signOut = async () => {
+    try {
+      await fetchJson("/api/auth/logout", { method: "POST", body: "{}" });
+      queryClient.clear();
+      window.location.replace("/login");
+    } catch (error) {
+      setImportNotice(error instanceof Error ? error.message : "Could not sign out.");
+    }
+  };
+
+  const openAccount = () => {
+    setAccountUsername(user?.username ?? "");
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setAccountMessage("");
+    setAccountOpen(true);
+  };
+
+  const saveAccount = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (newPassword !== confirmPassword) {
+      setAccountMessage("The new passwords do not match.");
+      return;
+    }
+    setAccountBusy(true);
+    setAccountMessage("");
+    try {
+      const updatedUser = await fetchJson<{ id: string; username: string }>("/api/auth/account", {
+        method: "PUT",
+        body: JSON.stringify({
+          currentPassword,
+          username: accountUsername,
+          newPassword,
+        }),
+      });
+      queryClient.setQueryData(["auth", "session"], updatedUser);
+      setAccountUsername(updatedUser.username);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setAccountMessage("Account settings saved.");
+    } catch (error) {
+      setAccountMessage(error instanceof Error ? error.message : "Could not update account settings.");
+    } finally {
+      setAccountBusy(false);
+    }
+  };
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -150,6 +208,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setSearchOpen(false);
+        setAccountOpen(false);
         setImportOpen(false);
         setImportSeries(null);
         setMobileOpen(false);
@@ -277,6 +336,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <button className="import-button" onClick={() => { setImportSeries(null); setImportOpen(true); }}>
               <Plus size={16} /><span>Import books</span>
             </button>
+            <button
+              type="button"
+              className="account-control"
+              onClick={openAccount}
+              title="Account settings"
+              aria-label={`Account settings for ${user?.username ?? "user"}`}
+            >
+              <CircleUserRound size={21} strokeWidth={1.7} />
+            </button>
           </div>
         </header>
 
@@ -304,6 +372,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               )) : <div className="search-hint"><ListFilter size={15} /> No matching stories in your library.</div>}
             </div>}
           </div>
+        </div>
+      )}
+      {accountOpen && (
+        <div className="overlay-backdrop account-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setAccountOpen(false)}>
+          <section className="account-dialog" role="dialog" aria-modal="true" aria-labelledby="account-dialog-title">
+            <header className="account-dialog-header">
+              <span className="account-dialog-avatar"><CircleUserRound size={23} /></span>
+              <div><p className="eyebrow">YOUR VEYLORA ACCOUNT</p><h2 id="account-dialog-title">Account settings</h2></div>
+              <button type="button" className="dialog-close" onClick={() => setAccountOpen(false)} aria-label="Close account settings"><X size={17} /></button>
+            </header>
+            <p className="account-dialog-description">Update your profile and password. Changing your password signs out other sessions.</p>
+            <form className="account-form" onSubmit={(event) => void saveAccount(event)}>
+              <label htmlFor="account-username">Username</label>
+              <div className="account-input-wrap"><UserRound size={16} /><input id="account-username" autoComplete="username" minLength={3} maxLength={32} required value={accountUsername} onChange={(event) => setAccountUsername(event.target.value)} /></div>
+              <div className="account-form-divider"><span>Password</span><small>Leave new password empty to keep it unchanged</small></div>
+              <label htmlFor="account-current-password">Current password</label>
+              <div className="account-input-wrap"><KeyRound size={16} /><input id="account-current-password" type="password" autoComplete="current-password" maxLength={128} required value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></div>
+              <label htmlFor="account-new-password">New password</label>
+              <div className="account-input-wrap"><KeyRound size={16} /><input id="account-new-password" type="password" autoComplete="new-password" minLength={8} maxLength={128} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="At least 8 characters" /></div>
+              <label htmlFor="account-confirm-password">Confirm new password</label>
+              <div className="account-input-wrap"><KeyRound size={16} /><input id="account-confirm-password" type="password" autoComplete="new-password" minLength={8} maxLength={128} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></div>
+              {accountMessage && <p className={`account-form-message ${accountMessage === "Account settings saved." ? "success" : ""}`} role="status">{accountMessage}</p>}
+              <div className="account-dialog-actions">
+                <button type="button" className="account-signout" onClick={() => void signOut()}><LogOut size={15} />Sign out</button>
+                <button type="submit" className="button button-primary" disabled={accountBusy}>{accountBusy ? "Saving…" : "Save changes"}</button>
+              </div>
+            </form>
+          </section>
         </div>
       )}
       {importOpen && <ImportDialog

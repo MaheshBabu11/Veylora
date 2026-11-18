@@ -4,6 +4,7 @@ import { getSeries } from "@/server/repository";
 import { pool } from "@/server/db";
 import { metadataSlug } from "@/server/metadata";
 import { SERIES_FORMATS } from "@/types/library";
+import { getRequestUser } from "@/server/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,10 +29,11 @@ const patchSchema = z.object({
 }, "Select both a cover chapter and page, or clear both.")
   .refine((value) => Object.keys(value).length > 0, "At least one field is required.");
 
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
+    const { id: userId } = getRequestUser(request);
     const { id } = paramsSchema.parse(await context.params);
-    return Response.json(await getSeries(id), { headers: { "Cache-Control": "private, no-store" } });
+    return Response.json(await getSeries(id, userId), { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     return apiError(error, "get series");
   }
@@ -39,6 +41,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
+    const { id: userId } = getRequestUser(request);
     const { id } = paramsSchema.parse(await context.params);
     const patch = patchSchema.parse(await readJson(request));
     const client = await pool.connect();
@@ -66,16 +69,28 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
         addField("title_override", patch.title);
       }
       if (patch.format !== undefined) addField("format", patch.format);
-      if (patch.status !== undefined) addField("status", patch.status);
-      if (patch.favorite !== undefined) addField("favorite", patch.favorite);
       if (patch.featured !== undefined) addField("featured", patch.featured);
       if (patch.description !== undefined) addField("description", patch.description);
       if (patch.coverChapterId !== undefined) addField("cover_chapter_id", patch.coverChapterId);
       if (patch.coverPageNumber !== undefined) addField("cover_page_number", patch.coverPageNumber);
-      await client.query(
-        `UPDATE series SET ${fields.length ? `${fields.join(", ")}, ` : ""}updated_at = now() WHERE id = $1`,
-        values,
-      );
+      if (fields.length) {
+        await client.query(
+          `UPDATE series SET ${fields.join(", ")}, updated_at = now() WHERE id = $1`,
+          values,
+        );
+      }
+
+      if (patch.status !== undefined || patch.favorite !== undefined) {
+        await client.query(
+          `INSERT INTO user_series(user_id, series_id, status, favorite)
+           VALUES ($1, $2, COALESCE($3::varchar, 'Plan to read'), COALESCE($4::boolean, false))
+           ON CONFLICT(user_id, series_id) DO UPDATE SET
+             status = COALESCE($3::varchar, user_series.status),
+             favorite = COALESCE($4::boolean, user_series.favorite),
+             updated_at = now()`,
+          [userId, id, patch.status ?? null, patch.favorite ?? null],
+        );
+      }
 
       if (patch.authorName !== undefined) {
         await client.query("DELETE FROM series_authors WHERE series_id = $1", [id]);
@@ -112,7 +127,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     } finally {
       client.release();
     }
-    return Response.json(await getSeries(id));
+    return Response.json(await getSeries(id, userId));
   } catch (error) {
     return apiError(error, "update series");
   }
