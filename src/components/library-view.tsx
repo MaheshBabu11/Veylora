@@ -139,7 +139,13 @@ export function LibraryView() {
         <div className="virtual-grid-viewport" ref={scrollRef}>
           <div className="virtual-grid-inner" style={{ height: `${virtualizer.getTotalSize()}px` }}>
             {virtualizer.getVirtualItems().map((virtualRow) => (
-              <div key={virtualRow.key} className="virtual-grid-row" style={{ transform: `translateY(${virtualRow.start}px)` }}>
+              <div
+                key={virtualRow.key}
+                ref={virtualizer.measureElement}
+                data-index={virtualRow.index}
+                className="virtual-grid-row"
+                style={{ transform: `translateY(${virtualRow.start}px)` }}
+              >
                 {rows[virtualRow.index].map((series) => (
                   <div className="virtual-grid-cell" key={series.id}>
                     <button className={`selection-check ${selected.includes(series.id) ? "checked" : ""}`} onClick={() => toggleSelection(series.id)} aria-label={`Select ${series.title}`}>{selected.includes(series.id) && <Check size={12} />}</button>
