@@ -50,6 +50,7 @@ export const series = pgTable("series", {
   featured: boolean("featured").notNull().default(false),
   coverPath: text("cover_path"),
   customCoverPath: text("custom_cover_path"),
+  coverImagePath: text("cover_image_path"),
   titleOverride: text("title_override"),
   coverChapterId: uuid("cover_chapter_id"),
   coverPageNumber: integer("cover_page_number"),
@@ -135,6 +136,7 @@ export const userPreferences = pgTable("user_preferences", {
   language: varchar("language", { length: 16 }).notNull().default("en"),
   defaultView: varchar("default_view", { length: 16 }).notNull().default("grid"),
   shortcuts: jsonb("shortcuts").notNull().default({}),
+  readerSettings: jsonb("reader_settings").notNull().default({}),
   updatedAt: updatedAt(),
 });
 

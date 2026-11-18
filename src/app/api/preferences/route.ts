@@ -10,6 +10,12 @@ const preferencesSchema = z.object({
   theme: z.enum(["dark", "light", "system"]).optional(),
   readerMode: z.enum(["vertical", "single"]).optional(),
   direction: z.enum(["rtl", "ltr"]).optional(),
+  readerSettings: z.object({
+    pageWidth: z.number().int().min(40).max(100),
+    zoom: z.number().int().min(70).max(140),
+    bottomBarVisible: z.boolean(),
+    pageRailVisible: z.boolean(),
+  }).optional(),
   autoScan: z.boolean().optional(),
   language: z.string().min(2).max(16).optional(),
   defaultView: z.enum(["grid", "list"]).optional(),
@@ -17,7 +23,7 @@ const preferencesSchema = z.object({
 }).refine((value) => Object.keys(value).length > 0, "At least one preference is required.");
 
 const selectPreferences = `SELECT p.user_id AS "userId", p.theme, p.reader_mode AS "readerMode", p.direction,
-  s.auto_scan AS "autoScan", p.language, p.default_view AS "defaultView", p.shortcuts
+  p.reader_settings AS "readerSettings", s.auto_scan AS "autoScan", p.language, p.default_view AS "defaultView", p.shortcuts
   FROM user_preferences p CROSS JOIN library_settings s WHERE p.user_id = $1 AND s.singleton = true`;
 
 export async function GET(request: Request) {
@@ -39,7 +45,7 @@ export async function PUT(request: Request) {
     const { autoScan, ...userPreferences } = preferences;
     const fieldMap: Record<string, string> = {
       theme: "theme", readerMode: "reader_mode", direction: "direction", language: "language",
-      defaultView: "default_view", shortcuts: "shortcuts",
+      readerSettings: "reader_settings", defaultView: "default_view", shortcuts: "shortcuts",
     };
     const values: unknown[] = [userId];
     const fields = Object.entries(userPreferences).map(([field, value]) => {

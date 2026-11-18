@@ -10,8 +10,9 @@ const STABILITY_CHECK_MS = 800;
 const RETRY_MS = 1_500;
 const POLL_SCAN_MS = 2_000;
 const AUTOMATIC_SCAN_COOLDOWN_MS = 60_000;
+const COVER_IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif"]);
 
-type ArchiveSnapshot = { path: string; size: number; mtimeMs: number };
+type WatchedFileSnapshot = { path: string; size: number; mtimeMs: number };
 type DeferredArchives = Map<string, number>;
 type WatcherState = {
   watcher?: FSWatcher;
@@ -35,26 +36,30 @@ globalForWatcher.veyloraLibraryWatcher = state;
 
 const sleep = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-function isArchivePath(root: string, candidate: string) {
+function isIndexablePath(root: string, candidate: string) {
   const relative = path.relative(root, candidate);
-  return !path.isAbsolute(relative)
+  const isArchive = /\.(cbz|zip|cbr)$/i.test(candidate);
+  const isCoverImage = path.dirname(relative) !== "."
+    && path.parse(candidate).name.toLowerCase() === "cover"
+    && COVER_IMAGE_EXTENSIONS.has(path.extname(candidate).toLowerCase());
+  return (isArchive || isCoverImage)
+    && !path.isAbsolute(relative)
     && relative !== ".."
     && !relative.startsWith(`..${path.sep}`)
-    && !relative.split(path.sep).some((part) => part.startsWith("."))
-    && /\.(cbz|zip|cbr)$/i.test(candidate);
+    && !relative.split(path.sep).some((part) => part.startsWith("."));
 }
 
-async function snapshotArchives(paths: string[]) {
-  const snapshots = await Promise.all(paths.map(async (archivePath): Promise<ArchiveSnapshot | null> => {
+async function snapshotChangedFiles(paths: string[]) {
+  const snapshots = await Promise.all(paths.map(async (filePath): Promise<WatchedFileSnapshot | null> => {
     try {
-      const info = await stat(archivePath);
-      return info.isFile() ? { path: archivePath, size: info.size, mtimeMs: info.mtimeMs } : null;
+      const info = await stat(filePath);
+      return info.isFile() ? { path: filePath, size: info.size, mtimeMs: info.mtimeMs } : null;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
     }
   }));
-  return new Map(snapshots.filter((snapshot): snapshot is ArchiveSnapshot => snapshot !== null).map((snapshot) => [snapshot.path, snapshot]));
+  return new Map(snapshots.filter((snapshot): snapshot is WatchedFileSnapshot => snapshot !== null).map((snapshot) => [snapshot.path, snapshot]));
 }
 
 function schedulePendingScan(paths: Iterable<string>, delay = DEBOUNCE_MS) {
@@ -73,15 +78,15 @@ async function isAutomaticScanningEnabled() {
   return result.rows[0]?.autoScan ?? true;
 }
 
-function deferUntilScanCompletes(jobId: string, archives: ArchiveSnapshot[], attempts = 0) {
+function deferUntilScanCompletes(jobId: string, files: WatchedFileSnapshot[], attempts = 0) {
   if (attempts >= 3) {
     console.error("[scanner] automatic scan follow-up limit reached", { jobId });
     return;
   }
   state.deferredJobId = jobId;
   state.deferredAttempts = attempts;
-  for (const archive of archives) {
-    state.deferredArchives.set(archive.path, archive.mtimeMs);
+  for (const file of files) {
+    state.deferredArchives.set(file.path, file.mtimeMs);
   }
   if (state.deferredTimer) return;
 
@@ -101,16 +106,16 @@ function deferUntilScanCompletes(jobId: string, archives: ArchiveSnapshot[], att
       state.deferredJobId = undefined;
       if (!await isAutomaticScanningEnabled() || !archivesToRetry.length) return;
 
-      const current = await snapshotArchives(archivesToRetry.map(([archivePath]) => archivePath));
-      const changed = [...current.values()].filter((archive) => {
-        const oldMtime = archivesToRetry.find(([archivePath]) => archivePath === archive.path)?.[1];
-        return oldMtime !== undefined && archive.mtimeMs >= oldMtime;
+      const current = await snapshotChangedFiles(archivesToRetry.map(([filePath]) => filePath));
+      const changed = [...current.values()].filter((file) => {
+        const oldMtime = archivesToRetry.find(([filePath]) => filePath === file.path)?.[1];
+        return oldMtime !== undefined && file.mtimeMs >= oldMtime;
       });
       if (!changed.length) return;
 
       const cooldownRemaining = AUTOMATIC_SCAN_COOLDOWN_MS - (Date.now() - (state.lastAutomaticScanAt ?? 0));
       if (cooldownRemaining > 0) {
-        schedulePendingScan(changed.map((archive) => archive.path), cooldownRemaining);
+        schedulePendingScan(changed.map((file) => file.path), cooldownRemaining);
         return;
       }
 
@@ -118,7 +123,7 @@ function deferUntilScanCompletes(jobId: string, archives: ArchiveSnapshot[], att
       if (nextJob.created) state.lastAutomaticScanAt = Date.now();
       if (!nextJob.created) {
         const createdAt = new Date(nextJob.createdAt).getTime();
-        const newer = changed.filter((archive) => archive.mtimeMs > createdAt);
+        const newer = changed.filter((file) => file.mtimeMs > createdAt);
         if (newer.length) deferUntilScanCompletes(nextJob.id, newer, previousAttempts + 1);
       }
       console.info("[scanner] queued follow-up for archives changed during a scan", { previousJobId, jobId: nextJob.id });
@@ -136,24 +141,24 @@ async function processPendingArchives() {
   if (!paths.length) return;
 
   try {
-    const before = await snapshotArchives(paths);
+    const before = await snapshotChangedFiles(paths);
     if (!before.size) return;
     await sleep(STABILITY_CHECK_MS);
-    const after = await snapshotArchives(paths);
-    const stable = [...after.values()].filter((archive) => {
-      const previous = before.get(archive.path);
-      return previous?.size === archive.size && previous.mtimeMs === archive.mtimeMs;
+    const after = await snapshotChangedFiles(paths);
+    const stable = [...after.values()].filter((file) => {
+      const previous = before.get(file.path);
+      return previous?.size === file.size && previous.mtimeMs === file.mtimeMs;
     });
-    const unstablePaths = [...after.values()].filter((archive) => {
-      const previous = before.get(archive.path);
-      return previous && (previous.size !== archive.size || previous.mtimeMs !== archive.mtimeMs);
-    }).map((archive) => archive.path);
+    const unstablePaths = [...after.values()].filter((file) => {
+      const previous = before.get(file.path);
+      return previous && (previous.size !== file.size || previous.mtimeMs !== file.mtimeMs);
+    }).map((file) => file.path);
     if (unstablePaths.length) schedulePendingScan(unstablePaths, RETRY_MS);
     if (!stable.length || !await isAutomaticScanningEnabled()) return;
 
     const cooldownRemaining = AUTOMATIC_SCAN_COOLDOWN_MS - (Date.now() - (state.lastAutomaticScanAt ?? 0));
     if (cooldownRemaining > 0) {
-      schedulePendingScan(stable.map((archive) => archive.path), cooldownRemaining);
+      schedulePendingScan(stable.map((file) => file.path), cooldownRemaining);
       return;
     }
 
@@ -161,10 +166,10 @@ async function processPendingArchives() {
     if (job.created) state.lastAutomaticScanAt = Date.now();
     if (!job.created) {
       const createdAt = new Date(job.createdAt).getTime();
-      const changedDuringScan = stable.filter((archive) => archive.mtimeMs > createdAt);
+      const changedDuringScan = stable.filter((file) => file.mtimeMs > createdAt);
       if (changedDuringScan.length) deferUntilScanCompletes(job.id, changedDuringScan);
     }
-    console.info("[scanner] archive change queued for indexing", { jobId: job.id, archives: stable.length });
+    console.info("[scanner] library file change queued for indexing", { jobId: job.id, files: stable.length });
   } catch (error) {
     console.error("[scanner] automatic scan could not be queued", error);
     schedulePendingScan(paths, RETRY_MS);
@@ -187,7 +192,7 @@ export async function startLibraryWatcher() {
     const watcher = watch(root, { recursive: true }, (_eventType, filename) => {
       if (!filename) return;
       const archivePath = path.resolve(root, filename.toString());
-      if (isArchivePath(root, archivePath)) schedulePendingScan([archivePath]);
+      if (isIndexablePath(root, archivePath)) schedulePendingScan([archivePath]);
     });
     state.watcher = watcher;
     watcher.on("error", (error) => {
@@ -196,7 +201,7 @@ export async function startLibraryWatcher() {
       state.watcher = undefined;
       restartWatcher();
     });
-    console.info("[scanner] watching books directory for archive changes", { root });
+    console.info("[scanner] watching books directory for archive and cover changes", { root });
   } catch (error) {
     console.error("[scanner] could not start archive watcher", error);
     restartWatcher();

@@ -9,7 +9,7 @@ import { useGenres } from "@/services/library";
 import { SERIES_FORMATS, type Series, type SeriesFormat } from "@/types/library";
 
 const MAX_COVER_BYTES = 20 * 1024 * 1024;
-const COVER_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+const COVER_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/avif", "image/gif"]);
 
 export type SeriesDetailsUpdate = {
   title: string;
@@ -176,10 +176,10 @@ export function EditSeriesDialog({
               </div>
               <label className="edit-field edit-cover-upload">
                 <span>Cover image <small>Optional · max 20 MiB</small></span>
-                <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={selectCover} />
+                <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp,image/avif,image/gif" onChange={selectCover} />
               </label>
               {coverFile && <button type="button" className="edit-clear-cover" onClick={clearCoverSelection}>Remove selected file</button>}
-              <p className="edit-field-hint">JPEG, PNG, WebP, and GIF images are supported. Leave empty to keep the current cover.</p>
+              <p className="edit-field-hint">JPEG, PNG, WebP, AVIF, and GIF images are supported. Leave empty to keep the current cover.</p>
             </div>
           </div>
           {errorMessage && <p className="edit-form-error" role="alert">{errorMessage}</p>}

@@ -1,7 +1,9 @@
-import { lstat, mkdir, readdir, realpath, stat, statfs, unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { lstat, mkdir, readdir, realpath, rename, stat, statfs, unlink } from "node:fs/promises";
 import path from "node:path";
 
 const DEFAULT_BOOKS_ROOT = "/mnt/data/Docker/books";
+const COVER_IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif"]);
 
 export function getConfiguredBooksRoot() {
   return path.resolve(/*turbopackIgnore: true*/ process.env.VEYLORA_BOOKS_DIR || DEFAULT_BOOKS_ROOT);
@@ -44,6 +46,69 @@ export async function listArchives(root: string) {
     }
   }
   return found.sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
+}
+
+export async function findSeriesCoverImage(seriesPath: string) {
+  let entries;
+  try {
+    entries = await readdir(seriesPath, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOTDIR") return null;
+    throw error;
+  }
+  const candidates = entries
+    .filter((entry) => entry.isFile()
+      && path.parse(entry.name).name.toLowerCase() === "cover"
+      && COVER_IMAGE_EXTENSIONS.has(path.extname(entry.name).toLowerCase()))
+    .map((entry) => path.join(seriesPath, entry.name))
+    .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
+  return candidates[0] ?? null;
+}
+
+export async function migrateLegacySeriesCover(
+  seriesPath: string,
+  legacyCoverPath: string,
+  updateReference: (coverPath: string) => Promise<void>,
+) {
+  const canonicalSeriesPath = await realpath(seriesPath);
+  const sourcePath = await resolveBooksFile(legacyCoverPath);
+  const extension = path.extname(sourcePath).toLowerCase();
+  if (path.dirname(sourcePath) !== canonicalSeriesPath
+    || !path.basename(sourcePath).startsWith(".veylora-cover-")
+    || !COVER_IMAGE_EXTENSIONS.has(extension)) {
+    return null;
+  }
+
+  const coverPath = path.join(canonicalSeriesPath, `cover${extension}`);
+  const backupPath = path.join(canonicalSeriesPath, `.veylora-cover-backup-${randomUUID()}`);
+  let backedUp = false;
+  let moved = false;
+  let referenceUpdated = false;
+  try {
+    try {
+      const coverInfo = await lstat(coverPath);
+      if (!coverInfo.isFile()) throw new Error("The existing series cover is not a regular file.");
+      await rename(coverPath, backupPath);
+      backedUp = true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    await rename(sourcePath, coverPath);
+    moved = true;
+    await updateReference(coverPath);
+    referenceUpdated = true;
+  } catch (error) {
+    if (moved) await rename(coverPath, sourcePath);
+    if (backedUp) await rename(backupPath, coverPath);
+    throw error;
+  }
+
+  if (referenceUpdated && backedUp) {
+    await unlink(backupPath).catch((error: unknown) => {
+      console.error("[cover] could not remove migrated cover backup", error);
+    });
+  }
+  return coverPath;
 }
 
 export async function getCacheRoot() {

@@ -11,7 +11,7 @@ Veylora is a local-first library and reader for manga, manhwa, manhua, webtoons,
 - Read chapters in vertical or single-page mode, with reading progress saved per account.
 - Organize favorites and collections, and manage appearance and reader preferences.
 - Manage account usernames and passwords from the profile dialog.
-- Automatically detect added or updated archives and queue library indexing; automatic scanning can be disabled in Settings.
+- Automatically detect added or updated archives and `cover.*` images and queue library indexing; automatic scanning can be disabled in Settings.
 - Keep original archives in a configurable directory; serve pages on demand and cache them locally.
 - Track scans and view library and cache storage usage.
 
@@ -86,6 +86,8 @@ Uploads are stored under `VEYLORA_BOOKS_DIR`, grouped by series and named with t
 The import dialog accepts up to 100 CBZ, ZIP, or CBR archives per request (up to 2 GiB per archive and 4 GiB total per request). Existing files are not overwritten. Supported page images include JPG/JPEG, PNG, WebP, AVIF, and GIF. CBR reading uses `node-unrar-js`; multi-volume RAR archives are not supported.
 
 Original archives remain in the configured books directory. Veylora reads pages on demand rather than extracting archives to arbitrary locations. The cache can be cleared from the app's settings.
+
+To use a folder cover automatically, place an image named `cover.jpg`, `cover.png`, `cover.webp`, `cover.avif`, or `cover.gif` directly inside the series folder. Library scans and imports update existing series entries to use the discovered cover; an explicitly uploaded or selected cover remains preferred.
 
 ## Useful commands
 

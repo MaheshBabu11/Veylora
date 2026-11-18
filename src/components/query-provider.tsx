@@ -3,13 +3,19 @@
 import { useEffect, useState } from "react";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { fetchJson, useSession } from "@/services/library";
-import { usePreferencesStore } from "@/stores/preferences";
+import { usePreferencesStore, type ReaderSettings } from "@/stores/preferences";
 
 function PreferencesHydrator() {
   const { data: user } = useSession();
   const { data: preferences } = useQuery({
     queryKey: ["preferences", user?.id],
-    queryFn: () => fetchJson<{ theme: "dark" | "light" | "system"; readerMode: "vertical" | "single"; direction: "rtl" | "ltr"; autoScan: boolean }>("/api/preferences"),
+    queryFn: () => fetchJson<{
+      theme: "dark" | "light" | "system";
+      readerMode: "vertical" | "single";
+      direction: "rtl" | "ltr";
+      readerSettings: Partial<ReaderSettings>;
+      autoScan: boolean;
+    }>("/api/preferences"),
     enabled: Boolean(user),
     retry: false,
   });

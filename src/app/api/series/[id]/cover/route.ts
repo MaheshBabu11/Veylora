@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { open, readFile, realpath, unlink } from "node:fs/promises";
+import { lstat, open, readFile, readdir, realpath, rename, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { PoolClient } from "pg";
 import { z } from "zod";
@@ -11,6 +11,8 @@ import { getBooksRoot, isWithinRoot, resolveBooksFile } from "@/server/filesyste
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const MAX_COVER_BYTES = 20 * 1024 * 1024;
+const AVIF_BRANDS = new Set(["avif", "avis"]);
+const COVER_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif"]);
 
 function imageType(bytes: Buffer) {
   if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
@@ -24,6 +26,15 @@ function imageType(bytes: Buffer) {
   }
   if (bytes.length >= 12 && bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP") {
     return { extension: ".webp", contentType: "image/webp" };
+  }
+  if (bytes.length >= 16 && bytes.toString("ascii", 4, 8) === "ftyp") {
+    const compatibleBrands = [bytes.toString("ascii", 8, 12)];
+    for (let offset = 16; offset + 4 <= Math.min(bytes.length, 64); offset += 4) {
+      compatibleBrands.push(bytes.toString("ascii", offset, offset + 4));
+    }
+    if (compatibleBrands.some((brand) => AVIF_BRANDS.has(brand))) {
+      return { extension: ".avif", contentType: "image/avif" };
+    }
   }
   return null;
 }
@@ -50,13 +61,29 @@ async function removeTemporaryCover(filePath: string) {
   }
 }
 
+async function removeOtherCoverImages(directory: string, keepPath: string) {
+  try {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (!entry.isFile()
+        || path.resolve(directory, entry.name) === keepPath
+        || path.parse(entry.name).name.toLowerCase() !== "cover"
+        || !COVER_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) continue;
+      await removeTemporaryCover(path.join(directory, entry.name));
+    }
+  } catch (error) {
+    console.error("[cover] could not remove old cover images", error);
+  }
+}
+
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = z.object({ id: z.string().uuid() }).parse(await context.params);
     const result = await pool.query(
-      `SELECT m.custom_cover_path, m.source_path AS series_path,
-         CASE WHEN selected_page.archive_entry IS NOT NULL THEN selected_chapter.source_path ELSE fallback.source_path END AS source_path,
-         COALESCE(selected_page.archive_entry, fallback.archive_entry) AS archive_entry
+      `SELECT m.custom_cover_path, m.cover_image_path, m.source_path AS series_path,
+         selected_chapter.source_path AS selected_source_path,
+         selected_page.archive_entry AS selected_archive_entry,
+         fallback.source_path AS fallback_source_path,
+         fallback.archive_entry AS fallback_archive_entry
        FROM series m
        LEFT JOIN chapters selected_chapter
          ON selected_chapter.id = m.cover_chapter_id AND selected_chapter.series_id = m.id
@@ -90,9 +117,31 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
     }
-    if (!row.archive_entry) throw new HttpError(404, "Cover image not found.");
-    const image = await readArchiveImage(row.source_path as string, row.archive_entry as string);
-    const extension = (row.archive_entry as string).split(".").at(-1)?.toLowerCase();
+    if (row.cover_image_path) {
+      try {
+        const coverPath = await resolveBooksFile(row.cover_image_path as string);
+        const seriesPath = await realpath(row.series_path as string);
+        if (path.dirname(coverPath) !== seriesPath) {
+          throw new HttpError(403, "The discovered cover image is outside its series directory.");
+        }
+        const coverStat = await stat(coverPath);
+        if (coverStat.size > MAX_COVER_BYTES) throw new HttpError(413, "The discovered cover image exceeds the 20 MiB limit.");
+        const image = await readFile(coverPath);
+        const contentType = imageType(image)?.contentType;
+        if (contentType) return coverResponse(image, contentType);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+    if (row.selected_archive_entry) {
+      const image = await readArchiveImage(row.selected_source_path as string, row.selected_archive_entry as string);
+      const extension = (row.selected_archive_entry as string).split(".").at(-1)?.toLowerCase();
+      const contentType = extension === "png" ? "image/png" : extension === "webp" ? "image/webp" : extension === "avif" ? "image/avif" : extension === "gif" ? "image/gif" : "image/jpeg";
+      return coverResponse(image, contentType);
+    }
+    if (!row.fallback_archive_entry) throw new HttpError(404, "Cover image not found.");
+    const image = await readArchiveImage(row.fallback_source_path as string, row.fallback_archive_entry as string);
+    const extension = (row.fallback_archive_entry as string).split(".").at(-1)?.toLowerCase();
     const contentType = extension === "png" ? "image/png" : extension === "webp" ? "image/webp" : extension === "avif" ? "image/avif" : extension === "gif" ? "image/gif" : "image/jpeg";
     return coverResponse(image, contentType);
   } catch (error) {
@@ -102,9 +151,13 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   let uploadedPath: string | undefined;
+  let finalCoverPath: string | undefined;
+  let backupPath: string | undefined;
   let client: PoolClient | undefined;
   let transactionStarted = false;
   let committed = false;
+  let coverInstalled = false;
+  let seriesPath: string | undefined;
   try {
     assertSameOrigin(request);
     const { id } = z.object({ id: z.string().uuid() }).parse(await context.params);
@@ -129,7 +182,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (file.size > MAX_COVER_BYTES) throw new HttpError(413, "Cover images must be 20 MiB or smaller.");
     const bytes = Buffer.from(await file.arrayBuffer());
     const type = imageType(bytes);
-    if (!type) throw new HttpError(415, "Choose a JPEG, PNG, WebP, or GIF image.");
+    if (!type) throw new HttpError(415, "Choose a JPEG, PNG, WebP, AVIF, or GIF image.");
 
     client = await pool.connect();
     await client.query("BEGIN");
@@ -140,37 +193,63 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     );
     if (!seriesResult.rowCount) throw new HttpError(404, "Title not found.");
     const booksRoot = await getBooksRoot();
-    const seriesPath = await realpath(seriesResult.rows[0].source_path as string);
+    seriesPath = await realpath(seriesResult.rows[0].source_path as string);
     if (!isWithinRoot(booksRoot, seriesPath)) {
       throw new HttpError(403, "The series directory is outside the configured books directory.");
     }
 
-    uploadedPath = path.join(seriesPath, `.veylora-cover-${randomUUID()}${type.extension}`);
+    finalCoverPath = path.join(seriesPath, `cover${type.extension}`);
+    uploadedPath = path.join(seriesPath, `.veylora-cover-upload-${randomUUID()}.tmp`);
     const handle = await open(/*turbopackIgnore: true*/ uploadedPath, "wx", 0o600);
     try {
       await handle.writeFile(bytes);
     } finally {
       await handle.close();
     }
+    try {
+      const currentCover = await lstat(finalCoverPath);
+      if (!currentCover.isFile()) throw new HttpError(409, "The existing cover path is not a regular file.");
+      backupPath = path.join(seriesPath, `.veylora-cover-backup-${randomUUID()}`);
+      await rename(finalCoverPath, backupPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    await rename(uploadedPath, finalCoverPath);
+    uploadedPath = undefined;
+    coverInstalled = true;
     await client.query(
-      "UPDATE series SET custom_cover_path = $2, updated_at = now() WHERE id = $1",
-      [id, uploadedPath],
+      "UPDATE series SET custom_cover_path = NULL, cover_image_path = $2, updated_at = now() WHERE id = $1",
+      [id, finalCoverPath],
     );
     await client.query("COMMIT");
     committed = true;
 
+    if (backupPath) await removeTemporaryCover(backupPath);
     const previousPath = seriesResult.rows[0].custom_cover_path;
     if (typeof previousPath === "string"
       && path.dirname(path.resolve(previousPath)) === seriesPath
       && path.basename(previousPath).startsWith(".veylora-cover-")) {
       await removeTemporaryCover(previousPath);
     }
+    await removeOtherCoverImages(seriesPath, finalCoverPath);
     return Response.json({ coverUrl: `/api/series/${id}/cover` }, { status: 201 });
   } catch (error) {
     if (client && transactionStarted && !committed) {
-      await client.query("ROLLBACK");
+      await client.query("ROLLBACK").catch((rollbackError: unknown) => {
+        console.error("[cover] could not roll back cover update", rollbackError);
+      });
     }
     if (uploadedPath && !committed) await removeTemporaryCover(uploadedPath);
+    if (!committed && finalCoverPath && coverInstalled) await removeTemporaryCover(finalCoverPath);
+    if (!committed && backupPath && finalCoverPath) {
+      try {
+        await rename(backupPath, finalCoverPath);
+      } catch (restoreError) {
+        if ((restoreError as NodeJS.ErrnoException).code !== "ENOENT") {
+          console.error("[cover] could not restore previous cover image", restoreError);
+        }
+      }
+    }
     return apiError(error, "upload series cover");
   } finally {
     client?.release();

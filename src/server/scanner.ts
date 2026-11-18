@@ -1,6 +1,6 @@
 import path from "node:path";
 import { pool } from "./db";
-import { getBooksRoot, listArchives } from "./filesystem";
+import { findSeriesCoverImage, getBooksRoot, listArchives, migrateLegacySeriesCover } from "./filesystem";
 import { listArchiveImages } from "./archive";
 
 function titleFromPath(root: string, archivePath: string) {
@@ -32,6 +32,8 @@ export async function runLibraryScan(jobId: string) {
 
   const errors: string[] = [];
   const chapterNumbers = new Map<string, Set<number>>();
+  const seriesCoverImages = new Map<string, string | null>();
+  const scannedSeriesPaths = new Set<string>();
   for (let index = 0; index < archives.length; index += 1) {
     const archivePath = archives[index];
     try {
@@ -39,6 +41,10 @@ export async function runLibraryScan(jobId: string) {
       if (!images.length) throw new Error("No supported image pages were found in this archive.");
       const title = titleFromPath(root, archivePath);
       const seriesPath = path.dirname(archivePath) === root ? archivePath : path.join(root, title);
+      if (!seriesCoverImages.has(seriesPath)) {
+        seriesCoverImages.set(seriesPath, await findSeriesCoverImage(seriesPath));
+      }
+      const coverImagePath = seriesCoverImages.get(seriesPath) ?? null;
       const chapterTitle = path.basename(archivePath, path.extname(archivePath));
       const usedNumbers = chapterNumbers.get(seriesPath) ?? new Set<number>();
       let chapterNumber = numberFromName(chapterTitle, usedNumbers.size + 1);
@@ -49,15 +55,18 @@ export async function runLibraryScan(jobId: string) {
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
-        const seriesResult = await client.query(
-          `INSERT INTO series(title, source_path, directory_id, cover_path)
-           VALUES ($1, $2, $3, $4)
+        const seriesResult = await client.query<{ id: string; custom_cover_path: string | null }>(
+          `INSERT INTO series(title, source_path, directory_id, cover_path, cover_image_path)
+           VALUES ($1, $2, $3, $4, $5)
            ON CONFLICT(source_path) DO UPDATE SET title = COALESCE(series.title_override, EXCLUDED.title), directory_id = EXCLUDED.directory_id,
-             cover_path = EXCLUDED.cover_path, updated_at = now()
-           RETURNING id`,
-          [title, seriesPath, directoryId, archivePath],
+             cover_path = EXCLUDED.cover_path,
+             cover_image_path = COALESCE(EXCLUDED.cover_image_path, series.cover_image_path),
+             updated_at = now()
+           RETURNING id, custom_cover_path`,
+          [title, seriesPath, directoryId, archivePath, coverImagePath],
         );
         const seriesId: string = seriesResult.rows[0].id;
+        const legacyCoverPath = seriesResult.rows[0].custom_cover_path;
         const chapterResult = await client.query(
           `INSERT INTO chapters(series_id, chapter_number, title, source_path, page_count)
            VALUES ($1, $2, $3, $4, $5)
@@ -82,12 +91,43 @@ export async function runLibraryScan(jobId: string) {
           );
         }
         await client.query("COMMIT");
+
+        if (legacyCoverPath && path.basename(legacyCoverPath).startsWith(".veylora-cover-")) {
+          const coverClient = await pool.connect();
+          try {
+            await coverClient.query("BEGIN");
+            const currentSeries = await coverClient.query<{ custom_cover_path: string | null }>(
+              "SELECT custom_cover_path FROM series WHERE id = $1 FOR UPDATE",
+              [seriesId],
+            );
+            if (currentSeries.rows[0]?.custom_cover_path === legacyCoverPath) {
+              const migratedPath = await migrateLegacySeriesCover(seriesPath, legacyCoverPath, async (coverPath) => {
+                const updated = await coverClient.query(
+                  "UPDATE series SET cover_image_path = $2, custom_cover_path = NULL, updated_at = now() WHERE id = $1 AND custom_cover_path = $3",
+                  [seriesId, coverPath, legacyCoverPath],
+                );
+                if (!updated.rowCount) throw new Error("The legacy cover reference changed during migration.");
+                await coverClient.query("COMMIT");
+              });
+              if (migratedPath) seriesCoverImages.set(seriesPath, migratedPath);
+              else await coverClient.query("COMMIT");
+            } else {
+              await coverClient.query("COMMIT");
+            }
+          } catch (error) {
+            await coverClient.query("ROLLBACK").catch(() => undefined);
+            throw error;
+          } finally {
+            coverClient.release();
+          }
+        }
       } catch (error) {
         await client.query("ROLLBACK");
         throw error;
       } finally {
         client.release();
       }
+      scannedSeriesPaths.add(seriesPath);
     } catch (error) {
       errors.push(`${path.relative(root, archivePath)}: ${error instanceof Error ? error.message : "Unable to read archive."}`);
     }
@@ -95,6 +135,14 @@ export async function runLibraryScan(jobId: string) {
   }
 
   const errorSummary = errors.length ? `${errors.length} archive(s) could not be indexed:\n${errors.slice(0, 100).join("\n")}` : null;
+  if (!errors.length) {
+    await pool.query(
+      `DELETE FROM series
+       WHERE directory_id = $1
+         AND NOT (source_path = ANY($2::text[]))`,
+      [directoryId, [...scannedSeriesPaths]],
+    );
+  }
   await pool.query(
     `UPDATE library_directories SET status = 'active', last_scanned_at = now() WHERE id = $1`,
     [directoryId],

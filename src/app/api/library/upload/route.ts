@@ -7,7 +7,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { z } from "zod";
 import { assertSameOrigin, apiError, HttpError } from "@/server/http";
-import { getBooksRoot, isWithinRoot } from "@/server/filesystem";
+import { findSeriesCoverImage, getBooksRoot, isWithinRoot } from "@/server/filesystem";
 import { listArchiveImages } from "@/server/archive";
 import { pool } from "@/server/db";
 import { metadataSlug } from "@/server/metadata";
@@ -220,6 +220,7 @@ export async function POST(request: Request) {
         throw new HttpError(400, "The series folder must be a real directory inside the configured books folder.");
       }
     }
+    const coverImagePath = await findSeriesCoverImage(canonicalDirectory);
 
     const existingNumbers = new Set((await readdir(canonicalDirectory, { withFileTypes: true }))
       .filter((entry) => entry.isFile() && IMAGE_ARCHIVE_EXTENSIONS.has(path.extname(entry.name).toLowerCase()))
@@ -264,18 +265,25 @@ export async function POST(request: Request) {
            [existingSeriesId],
          );
          if (!target.rows[0]) throw new HttpError(404, "The selected series was removed before the upload completed.");
+         if (coverImagePath) {
+           await client.query(
+             "UPDATE series SET cover_image_path = $2, updated_at = now() WHERE id = $1",
+             [existingSeriesId, coverImagePath],
+           );
+         }
       } else {
          const series = await client.query(
-           `INSERT INTO series(title, description, source_path, directory_id, cover_path)
-            VALUES ($1, $2, $3, $4, $5)
+           `INSERT INTO series(title, description, source_path, directory_id, cover_path, cover_image_path)
+            VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT(source_path) DO UPDATE SET
               title = COALESCE(series.title_override, EXCLUDED.title),
-              description = CASE WHEN $6::boolean THEN EXCLUDED.description ELSE series.description END,
+              description = CASE WHEN $7::boolean THEN EXCLUDED.description ELSE series.description END,
               directory_id = EXCLUDED.directory_id,
               cover_path = COALESCE(series.cover_path, EXCLUDED.cover_path),
+              cover_image_path = COALESCE(EXCLUDED.cover_image_path, series.cover_image_path),
               updated_at = now()
             RETURNING id`,
-           [title, description ?? "", canonicalDirectory, directory.rows[0].id, createdPaths[0], Boolean(description)],
+           [title, description ?? "", canonicalDirectory, directory.rows[0].id, createdPaths[0], coverImagePath, Boolean(description)],
          );
          const seriesId: string = series.rows[0].id;
 
