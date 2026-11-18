@@ -31,12 +31,13 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function useSeriesList(options: { query?: string; status?: string; genre?: string; featured?: boolean; sort?: string; limit?: number; offset?: number; enabled?: boolean } = {}) {
+export function useSeriesList(options: { query?: string; status?: string; genre?: string; featured?: boolean; collectionId?: string; sort?: string; limit?: number; offset?: number; enabled?: boolean } = {}) {
   const params = new URLSearchParams();
   if (options.query?.trim()) params.set("q", options.query.trim());
   if (options.status && options.status !== "All statuses") params.set("status", options.status);
   if (options.genre && options.genre !== "All genres") params.set("genre", options.genre);
   if (options.featured !== undefined) params.set("featured", String(options.featured));
+  if (options.collectionId) params.set("collectionId", options.collectionId);
   if (options.sort) params.set("sort", options.sort);
   params.set("limit", String(options.limit ?? 100));
   params.set("offset", String(options.offset ?? 0));

@@ -11,6 +11,10 @@ const createCollectionSchema = z.object({
   description: z.string().max(1000).default(""),
   seriesIds: z.array(z.string().uuid()).max(500).default([]),
 });
+const updateCollectionSchema = z.object({
+  collectionId: z.string().uuid(),
+  seriesIds: z.array(z.string().uuid()).max(500),
+});
 
 export async function GET(request: Request) {
   try {
@@ -54,6 +58,46 @@ export async function POST(request: Request) {
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     return apiError(error, "create collection");
+  } finally {
+    client.release();
+  }
+}
+
+export async function PATCH(request: Request) {
+  const client = await pool.connect();
+  try {
+    const { id: userId } = getRequestUser(request);
+    const { collectionId, seriesIds } = updateCollectionSchema.parse(await readJson(request));
+    const uniqueSeriesIds = [...new Set(seriesIds)];
+
+    await client.query("BEGIN");
+    const collection = await client.query(
+      "SELECT id FROM collections WHERE id = $1 AND user_id = $2 FOR UPDATE",
+      [collectionId, userId],
+    );
+    if (!collection.rowCount) throw new HttpError(404, "Collection not found.");
+
+    if (uniqueSeriesIds.length) {
+      const existingSeries = await client.query("SELECT id FROM series WHERE id = ANY($1::uuid[])", [uniqueSeriesIds]);
+      if (existingSeries.rowCount !== uniqueSeriesIds.length) {
+        throw new HttpError(400, "One or more selected titles no longer exist.");
+      }
+    }
+
+    await client.query("DELETE FROM collection_series WHERE collection_id = $1", [collectionId]);
+    if (uniqueSeriesIds.length) {
+      await client.query(
+        `INSERT INTO collection_series(collection_id, series_id)
+         SELECT $1, selected.series_id FROM unnest($2::uuid[]) AS selected(series_id)
+         ON CONFLICT DO NOTHING`,
+        [collectionId, uniqueSeriesIds],
+      );
+    }
+    await client.query("COMMIT");
+    return Response.json({ collectionId, series_ids: uniqueSeriesIds });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    return apiError(error, "update collection");
   } finally {
     client.release();
   }

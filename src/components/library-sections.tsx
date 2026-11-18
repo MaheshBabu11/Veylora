@@ -27,9 +27,19 @@ export function LibrarySection({ kind }: { kind: string }) {
   const [newCollection, setNewCollection] = useState("");
   const [newGenre, setNewGenre] = useState("");
   const [message, setMessage] = useState("");
+  const [editingCollection, setEditingCollection] = useState<Collection | null>(null);
+  const [selectedSeriesIds, setSelectedSeriesIds] = useState<string[]>([]);
+  const [collectionSearch, setCollectionSearch] = useState("");
   const queryClient = useQueryClient();
   const { data: library, isLoading, error } = useSeriesList({ limit: 500, sort: "updated" });
   const series = useMemo(() => library?.items ?? [], [library?.items]);
+  const { data: collectionLibrary, isLoading: collectionSeriesLoading, error: collectionSeriesError } = useSeriesList({
+    query: collectionSearch,
+    limit: 500,
+    sort: "updated",
+    enabled: kind === "collections" && Boolean(editingCollection),
+  });
+  const collectionSeries = collectionLibrary?.items ?? [];
   const { data: collections = [] } = useQuery({
     queryKey: ["collections"],
     queryFn: () => fetchJson<Collection[]>("/api/collections"),
@@ -48,6 +58,18 @@ export function LibrarySection({ kind }: { kind: string }) {
       await queryClient.invalidateQueries({ queryKey: ["collections"] });
     },
     onError: (createError) => setMessage(createError instanceof Error ? createError.message : "Could not create collection."),
+  });
+  const updateCollectionSeries = useMutation({
+    mutationFn: ({ collectionId, seriesIds }: { collectionId: string; seriesIds: string[] }) => fetchJson("/api/collections", {
+      method: "PATCH",
+      body: JSON.stringify({ collectionId, seriesIds }),
+    }),
+    onSuccess: async () => {
+      setEditingCollection(null);
+      setMessage("Collection updated.");
+      await queryClient.invalidateQueries({ queryKey: ["collections"] });
+    },
+    onError: (updateError) => setMessage(updateError instanceof Error ? updateError.message : "Could not update collection."),
   });
   const createGenre = useMutation({
     mutationFn: (name: string) => fetchJson<GenreDefinition>("/api/genres", {
@@ -86,12 +108,20 @@ export function LibrarySection({ kind }: { kind: string }) {
             const covers = collection.series_ids.map((id) => series.find((item) => item.id === id)).filter((item): item is Series => Boolean(item)).slice(0, 3);
             return (
               <article className={`collection-card collection-card-${index + 1}`} key={collection.id} style={{ "--collection-color": "#78948e" } as React.CSSProperties}>
-                <Link href="/library" className="collection-art-stack" aria-label={`Open ${collection.name}`}>
+                <Link href={`/library?collection=${encodeURIComponent(collection.id)}`} className="collection-art-stack" aria-label={`Open ${collection.name}`}>
                   <div className="collection-orbit" />
                   {covers.map((item, coverIndex) => <div className={`collection-cover-stack stack-${coverIndex + 1}`} key={item.id}><CoverArt series={item} /></div>)}
                   <span className="collection-count">{collection.series_ids.length} STORIES</span>
                 </Link>
                 <div className="collection-copy"><div><h2>{collection.name}</h2><p>{collection.description || "A personal shelf."}</p></div><ArrowRight size={17} /></div>
+                <button
+                  className="collection-manage"
+                  onClick={() => {
+                    setEditingCollection(collection);
+                    setSelectedSeriesIds(collection.series_ids);
+                    setCollectionSearch("");
+                  }}
+                ><Plus size={14} /> Manage stories</button>
               </article>
             );
           })}
@@ -107,6 +137,44 @@ export function LibrarySection({ kind }: { kind: string }) {
                 <input className="dialog-input" value={newCollection} onChange={(event) => setNewCollection(event.target.value)} placeholder="e.g. Rainy day reads" autoFocus />
                 <button className="button button-primary" type="submit" disabled={createCollection.isPending}><Plus size={15} /> Create collection</button>
               </form>
+            </div>
+          </div>
+        )}
+        {editingCollection && (
+          <div className="overlay-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setEditingCollection(null)}>
+            <div className="create-dialog collection-manager-dialog" role="dialog" aria-modal="true" aria-labelledby="manage-collection-title">
+              <button className="dialog-close import-close" onClick={() => setEditingCollection(null)} aria-label="Close"><X size={17} /></button>
+              <div className="dialog-icon"><FolderHeart size={20} /></div><p className="eyebrow">YOUR PERSONAL SHELF</p><h2 id="manage-collection-title">{editingCollection.name}</h2>
+              <p className="import-description">Choose the stories you want in this collection.</p>
+              <label className="collection-picker-search"><Search size={15} /><input value={collectionSearch} onChange={(event) => setCollectionSearch(event.target.value)} placeholder="Search your library..." aria-label="Search your library" autoFocus /></label>
+              <div className="collection-picker" aria-label="Series in your library">
+                {collectionSeriesLoading && <div className="collection-picker-state" role="status">Loading titles…</div>}
+                {collectionSeriesError && <div className="collection-picker-state" role="alert">Could not load titles: {collectionSeriesError.message}</div>}
+                {!collectionSeriesLoading && !collectionSeriesError && collectionSeries.length === 0 && <div className="collection-picker-state">No matching titles found.</div>}
+                {collectionSeries.map((item) => {
+                  const checked = selectedSeriesIds.includes(item.id);
+                  return (
+                    <label className="collection-picker-row" key={item.id}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={!checked && selectedSeriesIds.length >= 500}
+                        onChange={() => setSelectedSeriesIds((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])}
+                      />
+                      <span className="collection-picker-copy"><strong>{item.title}</strong><small>{item.author || item.format}</small></span>
+                    </label>
+                  );
+                })}
+              </div>
+              <div className="collection-manager-footer">
+                <span>{selectedSeriesIds.length} stories selected</span>
+                <div className="collection-manager-actions">
+                  <button className="button button-subtle" onClick={() => setEditingCollection(null)} disabled={updateCollectionSeries.isPending}>Cancel</button>
+                  <button className="button button-primary" onClick={() => updateCollectionSeries.mutate({ collectionId: editingCollection.id, seriesIds: selectedSeriesIds })} disabled={updateCollectionSeries.isPending || collectionSeriesLoading || Boolean(collectionSeriesError)}>
+                    {updateCollectionSeries.isPending ? "Saving…" : "Save stories"}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

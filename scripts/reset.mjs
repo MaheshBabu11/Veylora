@@ -47,14 +47,11 @@ if (!process.argv.includes("--confirm")) {
             chapters,
             series_authors,
             series_genres,
-            series_tags,
             authors,
             genres,
-            tags,
             series,
             library_directories,
             user_preferences,
-            import_jobs,
             scan_jobs
             RESTART IDENTITY`);
           await client.query("INSERT INTO user_preferences(user_id) VALUES ('local')");

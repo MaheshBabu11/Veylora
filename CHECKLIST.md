@@ -63,12 +63,12 @@ Quick reference for implementation priorities and progress tracking.
 - [x] `series` - Main titles table
 - [x] `chapters` - Chapter hierarchy
 - [x] `chapter_pages` - Page tracking
-- [x] `authors`, `genres`, `tags` - Metadata
+- [x] `authors`, `genres` - Metadata
 - [x] `user_preferences` - Settings
 - [x] `reading_progress` - User progress
 - [x] `reading_history` - Reading events
 - [x] `collections`, `bookmarks` - User data
-- [x] `import_jobs`, `scan_jobs` - Job tracking
+- [x] `scan_jobs` - Durable scan job tracking
 - [x] `library_directories` - Roots
 
 ### ORM & Migrations
@@ -173,7 +173,7 @@ Quick reference for implementation priorities and progress tracking.
 
 ### Collections
 - [x] Create custom collections
-- [ ] Add/remove series
+- [x] Add/remove series
 - [ ] Collection descriptions
 - [ ] Collection organization
 - [ ] Export collection

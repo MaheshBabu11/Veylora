@@ -117,17 +117,6 @@ export const seriesGenres = pgTable("series_genres", {
   genreId: uuid("genre_id").notNull().references(() => genres.id, { onDelete: "cascade" }),
 }, (table) => [primaryKey({ columns: [table.seriesId, table.genreId] }), index("series_genres_genre_idx").on(table.genreId)]);
 
-export const tags = pgTable("tags", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  name: text("name").notNull(),
-  slug: text("slug").notNull().unique(),
-});
-
-export const seriesTags = pgTable("series_tags", {
-  seriesId: uuid("series_id").notNull().references(() => series.id, { onDelete: "cascade" }),
-  tagId: uuid("tag_id").notNull().references(() => tags.id, { onDelete: "cascade" }),
-}, (table) => [primaryKey({ columns: [table.seriesId, table.tagId] }), index("series_tags_tag_idx").on(table.tagId)]);
-
 export const userPreferences = pgTable("user_preferences", {
   userId: text("user_id").primaryKey().default("local"),
   theme: varchar("theme", { length: 16 }).notNull().default("dark"),
@@ -179,16 +168,6 @@ export const collectionSeries = pgTable("collection_series", {
   seriesId: uuid("series_id").notNull().references(() => series.id, { onDelete: "cascade" }),
   addedAt: createdAt(),
 }, (table) => [primaryKey({ columns: [table.collectionId, table.seriesId] }), index("collection_series_series_idx").on(table.seriesId)]);
-
-export const importJobs = pgTable("import_jobs", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  status: varchar("status", { length: 24 }).notNull().default("queued"),
-  sourcePath: text("source_path").notNull(),
-  progress: integer("progress").notNull().default(0),
-  error: text("error"),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-}, (table) => [index("import_jobs_status_idx").on(table.status, table.createdAt)]);
 
 export const scanJobs = pgTable("scan_jobs", {
   id: uuid("id").primaryKey().defaultRandom(),

@@ -31,6 +31,11 @@ export async function queueLibraryScan() {
       job = result.rows[0];
       created = true;
     }
+    await client.query(
+      `DELETE FROM scan_jobs
+       WHERE status NOT IN ('queued', 'running')
+         AND id NOT IN (SELECT id FROM scan_jobs ORDER BY created_at DESC LIMIT 20)`,
+    );
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");

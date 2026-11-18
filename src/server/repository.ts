@@ -8,6 +8,7 @@ export type SeriesFilters = {
   status?: string;
   genre?: string;
   featuredOnly?: boolean;
+  collectionId?: string;
   sort?: string;
   limit?: number;
   offset?: number;
@@ -98,6 +99,7 @@ export async function listSeries(filters: SeriesFilters) {
   const status = filters.status || null;
   const genre = filters.genre || null;
   const featuredOnly = filters.featuredOnly ?? null;
+  const collectionId = filters.collectionId || null;
   const id = filters.id || null;
   const limit = Math.min(Math.max(filters.limit ?? 100, 1), 500);
   const offset = Math.max(filters.offset ?? 0, 0);
@@ -109,10 +111,14 @@ export async function listSeries(filters: SeriesFilters) {
     AND ($3::text IS NULL OR COALESCE(us.status, 'Plan to read') = $3)
     AND ($4::text IS NULL OR EXISTS (SELECT 1 FROM series_genres mg JOIN genres g ON g.id = mg.genre_id WHERE mg.series_id = m.id AND g.name = $4))
     AND ($5::uuid IS NULL OR m.id = $5)
-    AND ($6::boolean IS NULL OR m.featured = $6)`;
-  const params = [userId, query, status, genre, id, featuredOnly];
+    AND ($6::boolean IS NULL OR m.featured = $6)
+    AND ($7::uuid IS NULL OR EXISTS (
+      SELECT 1 FROM collection_series cs JOIN collections c ON c.id = cs.collection_id
+      WHERE cs.collection_id = $7 AND cs.series_id = m.id AND c.user_id = $1
+    ))`;
+  const params = [userId, query, status, genre, id, featuredOnly, collectionId];
   const countResult = await pool.query(`SELECT count(*)::int AS total ${userSeriesJoin} ${filterSql}`, params);
-  const result = await pool.query(`${seriesSql} ${filterSql} ORDER BY ${sort} LIMIT $7 OFFSET $8`, [...params, limit, offset]);
+  const result = await pool.query(`${seriesSql} ${filterSql} ORDER BY ${sort} LIMIT $8 OFFSET $9`, [...params, limit, offset]);
   return { items: result.rows.map(toSeries), total: countResult.rows[0].total as number, limit, offset };
 }
 
