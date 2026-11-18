@@ -2,7 +2,7 @@
 
 Veylora is a local-first library and reader for manga, manhwa, manhua, webtoons, and comics. It keeps archive files on your filesystem and uses PostgreSQL for series metadata, reading progress, preferences, bookmarks, collections, and library scan records.
 
-> **Project status:** Veylora is under active development and intended for trusted local use. It supports local username/password accounts, but does not yet include administrator roles, invitations, password recovery, or durable background workers. Do not expose it directly to the public internet.
+> **Project status:** Veylora is under active development and intended for trusted local use. It supports local username/password accounts, but does not yet include administrator roles, invitations, or password recovery. Do not expose it directly to the public internet.
 
 ## Features
 
@@ -12,6 +12,7 @@ Veylora is a local-first library and reader for manga, manhwa, manhua, webtoons,
 - Organize favorites and collections, and manage appearance and reader preferences.
 - Manage account usernames and passwords from the profile dialog.
 - Automatically detect added or updated archives and `cover.*` images and queue library indexing; automatic scanning can be disabled in Settings.
+- Persist scan jobs in PostgreSQL, recover abandoned work after a worker lease expires, retry transient failures, and cancel or retry scans from Settings.
 - Keep original archives in a configurable directory; serve pages on demand and cache them locally.
 - Track scans and view library and cache storage usage.
 
@@ -120,7 +121,7 @@ scripts/               Migration and local reset scripts
 ## Current limitations
 
 - User registration is open, and there are no administrator roles, invitations, or password recovery.
-- Scan jobs run in the Next.js process and may not survive process termination.
+- The scan worker runs in the Next.js Node process. Queued work survives restarts; abandoned scans are reclaimed after a five-minute lease and retried up to three attempts with backoff. A retry restarts the scan from the beginning, and archive uploads themselves still run in the request.
 - Offline changes, cross-device synchronization, and automated conflict resolution are not implemented.
 - Image thumbnail generation and production-scale performance/security validation remain outstanding.
 

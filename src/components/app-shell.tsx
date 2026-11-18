@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   ArrowUpRight, BookOpen, Bookmark, ChevronDown, CircleUserRound, KeyRound, Library, Clock3, Compass, FolderHeart, Home, ListFilter,
-  Menu, Plus, Search, Settings2, Sparkles, UsersRound, X,
+  Menu, Plus, Search, Settings2, Sparkles, UsersRound, X, ScanLine,
   PanelLeftClose, PanelLeftOpen, Heart, ShieldCheck, LogOut, UserRound,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -39,6 +39,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [importSeries, setImportSeries] = useState<ImportSeriesTarget | null>(null);
   const [importNotice, setImportNotice] = useState("");
   const [scanJobId, setScanJobId] = useState("");
+  const [scanProgress, setScanProgress] = useState<{ status: string; progress: number; total: number; cancel_requested: boolean } | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const [accountUsername, setAccountUsername] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
@@ -119,11 +120,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
-        const job = await fetchJson<{ status: string; progress: number; total: number; error: string | null }>(`/api/jobs/${scanJobId}`);
+        const job = await fetchJson<{ status: string; progress: number; total: number; error: string | null; cancel_requested: boolean }>(`/api/jobs/${scanJobId}`);
         if (!active) return;
-        if (job.status === "completed" || job.status === "completed_with_errors" || job.status === "failed") {
-          setImportNotice(job.error || `Library scan finished: ${job.progress} archive(s) checked.`);
+        setScanProgress(job);
+        if (["completed", "completed_with_errors", "failed", "cancelled"].includes(job.status)) {
+          setImportNotice(job.status === "cancelled"
+            ? `Library scan cancelled after ${job.progress} archive(s).`
+            : job.error || `Library scan finished: ${job.progress} archive(s) checked.`);
           setScanJobId("");
+          setScanProgress(null);
           await Promise.all([
             queryClient.invalidateQueries({ queryKey: ["directories"] }),
             queryClient.invalidateQueries({ queryKey: ["storage"] }),
@@ -132,12 +137,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ]);
           return;
         }
-        setImportNotice(`Scanning library… ${job.progress}/${job.total}`);
         timer = setTimeout(() => void poll(), 1200);
       } catch (error) {
         if (!active) return;
         setImportNotice(error instanceof Error ? error.message : "Could not check scan progress.");
         setScanJobId("");
+        setScanProgress(null);
       }
     };
     void poll();
@@ -152,11 +157,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     let active = true;
     const discoverScan = async () => {
       try {
-        const job = await fetchJson<{ id: string } | null>("/api/library/scan");
+        const job = await fetchJson<{ id: string; status: string; progress: number; total: number; cancel_requested: boolean } | null>("/api/library/scan");
         if (!active) return;
         if (job) {
           setScanJobId(job.id);
-          setImportNotice("A library scan is running.");
+          setScanProgress(job);
           return;
         }
       } catch {
@@ -222,9 +227,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, []);
 
-  const openImportForSeries = (series: ImportSeriesTarget) => {
-    setImportSeries(series);
+  const openImportForSeries = (series?: ImportSeriesTarget) => {
+    setImportSeries(series ?? null);
     setImportOpen(true);
+  };
+
+  const cancelLibraryScan = async () => {
+    if (!scanJobId) return;
+    try {
+      await fetchJson(`/api/jobs/${scanJobId}/cancel`, { method: "POST", body: "{}" });
+      setScanProgress((current) => current ? { ...current, cancel_requested: true } : current);
+    } catch (error) {
+      setImportNotice(error instanceof Error ? error.message : "Could not cancel the library scan.");
+    }
   };
 
   return (
@@ -347,6 +362,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </button>
           </div>
         </header>
+
+        {scanJobId && <div className="scan-activity" role="region" aria-label="Library scan progress">
+          <ScanLine size={17} aria-hidden="true" />
+          <div className="scan-activity-details">
+            <div className="scan-activity-copy"><strong>{scanProgress?.cancel_requested ? "Cancelling library scan…" : scanProgress?.status === "queued" ? "Library scan queued" : "Scanning your library"}</strong><span>{scanProgress?.status === "queued" ? "The worker will begin shortly." : `${scanProgress?.progress ?? 0} of ${scanProgress?.total ?? 0} archives checked`}</span></div>
+            <progress aria-label="Library scan progress" max={Math.max(scanProgress?.total ?? 0, 1)} value={Math.min(scanProgress?.progress ?? 0, Math.max(scanProgress?.total ?? 0, 1))} />
+          </div>
+          {!scanProgress?.cancel_requested && <button type="button" className="scan-activity-cancel" onClick={() => void cancelLibraryScan()} aria-label="Cancel library scan">Cancel</button>}
+        </div>}
 
         <main className="main-area">
           <div className="content-area">{children}</div>

@@ -122,9 +122,10 @@ Quick reference for implementation priorities and progress tracking.
 - [ ] Import worker process
 - [x] Bulk series imports
 - [x] Progress tracking
-- [ ] Cancellation support
-- [ ] Retry logic
-- [ ] Import history
+- [x] Durable PostgreSQL scan worker with lease-based recovery
+- [x] Scan cancellation, automatic retry with backoff, and manual retry
+- [x] Recent scan history in Settings
+- [ ] Background processing, cancellation, retry, and history for archive uploads
 
 ### Caching & Processing
 - [x] Page extraction from archives
@@ -353,7 +354,7 @@ Quick reference for implementation priorities and progress tracking.
 Phase 1: ✅ 100% Complete
 Phase 2: ✅ 100% Complete
 Phase 3: 🟡 Implemented; app-runtime verification and remaining items open
-Phase 4: 🟡 Partial; durable jobs and image processing remain
+Phase 4: 🟡 Partial; durable scan jobs are implemented; upload workers and image processing remain
 Phase 5: 🟡 Partial; sync, exports, and several user workflows remain
 Phase 6: 🟡 Partial; optimistic updates, error boundaries, and missing hooks remain
 Phase 7: 🟡 Partial; testing, security review, load, and performance verification remain
@@ -388,4 +389,4 @@ Remaining work is tracked by unchecked items above; implementation status does n
 
 Last Updated: November 17, 2026
 Build: Typecheck, lint, and production build verified; deployment validation remains open
-Next Focus: Complete remaining Phase 3–7 items, especially runtime acceptance checks, durable import jobs, and security/performance testing
+Next Focus: Verify scan recovery/cancellation, then add durable upload processing and image thumbnails; complete security/performance testing

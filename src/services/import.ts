@@ -17,7 +17,7 @@ export type BookUploadResult = {
   uploaded: { chapterNumber: number; fileName: string }[];
 };
 
-export async function uploadBookArchives(details: BookUploadDetails): Promise<BookUploadResult> {
+export async function uploadBookArchives(details: BookUploadDetails, onProgress?: (percentage: number) => void): Promise<BookUploadResult> {
   const body = new FormData();
   if (details.seriesId) {
     body.append("seriesId", details.seriesId);
@@ -34,13 +34,32 @@ export async function uploadBookArchives(details: BookUploadDetails): Promise<Bo
     body.append("chapterNumbers", String(chapter.chapterNumber));
   }
 
-  const response = await fetch("/api/library/upload", { method: "POST", body });
-  const result = await response.json().catch(() => null) as BookUploadResult | { error?: string } | null;
-  if (!response.ok) {
-    throw new Error(result && "error" in result && result.error ? result.error : `Upload failed (${response.status}).`);
-  }
-  if (!result || !("uploaded" in result) || !Array.isArray(result.uploaded)) {
-    throw new Error("The server returned an invalid upload response.");
-  }
-  return result;
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", "/api/library/upload");
+    request.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable) onProgress?.(Math.min(100, Math.round(event.loaded / event.total * 100)));
+    });
+    request.addEventListener("load", () => {
+      let result: BookUploadResult | { error?: string } | null = null;
+      try {
+        result = JSON.parse(request.responseText) as BookUploadResult | { error?: string };
+      } catch {
+        reject(new Error("The server returned an invalid upload response."));
+        return;
+      }
+      if (request.status < 200 || request.status >= 300) {
+        reject(new Error(result && "error" in result && result.error ? result.error : `Upload failed (${request.status}).`));
+        return;
+      }
+      if (!result || !("uploaded" in result) || !Array.isArray(result.uploaded)) {
+        reject(new Error("The server returned an invalid upload response."));
+        return;
+      }
+      resolve(result);
+    });
+    request.addEventListener("error", () => reject(new Error("The upload could not reach the server.")));
+    request.addEventListener("abort", () => reject(new Error("The upload was cancelled.")));
+    request.send(body);
+  });
 }

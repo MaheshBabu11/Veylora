@@ -37,5 +37,6 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|robots.txt).*)"],
+  // The upload route authenticates itself so Next.js can stream large request bodies without proxy buffering.
+  matcher: ["/((?!api/library/upload$|_next/static|_next/image|favicon.ico|icon.svg|robots.txt).*)"],
 };

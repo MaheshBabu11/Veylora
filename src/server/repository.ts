@@ -101,7 +101,10 @@ export async function listSeries(filters: SeriesFilters) {
   const id = filters.id || null;
   const limit = Math.min(Math.max(filters.limit ?? 100, 1), 500);
   const offset = Math.max(filters.offset ?? 0, 0);
-  const sort = filters.sort === "title" ? "m.title ASC" : filters.sort === "updated" ? "m.updated_at DESC" : "m.created_at DESC";
+  const sort = filters.sort === "title" ? "m.title ASC"
+    : filters.sort === "updated" ? "m.updated_at DESC"
+      : filters.sort === "last-read" ? "history.read_at DESC NULLS LAST, m.title ASC"
+        : "m.created_at DESC";
   const filterSql = `WHERE ($2::text IS NULL OR m.search_vector @@ plainto_tsquery('simple', $2) OR m.title ILIKE '%' || $2 || '%')
     AND ($3::text IS NULL OR COALESCE(us.status, 'Plan to read') = $3)
     AND ($4::text IS NULL OR EXISTS (SELECT 1 FROM series_genres mg JOIN genres g ON g.id = mg.genre_id WHERE mg.series_id = m.id AND g.name = $4))

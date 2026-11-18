@@ -8,8 +8,10 @@ import { BookOpen, Check, Grid2X2, List, Search, SlidersHorizontal, X } from "lu
 import { CoverArt } from "@/components/cover-art";
 import { FilterDropdown } from "@/components/filter-dropdown";
 import { SeriesCard } from "@/components/series-card";
+import { useOpenImportDialog } from "@/components/import-series-context";
 import type { Series, ReadingStatus } from "@/types/library";
 import { fetchJson, useSeriesList } from "@/services/library";
+import { usePreferencesStore } from "@/stores/preferences";
 
 const statuses = ["All statuses", "Reading", "Plan to read", "Completed", "On hold"];
 const subscribeToViewport = (callback: () => void) => {
@@ -23,7 +25,8 @@ export function LibraryView() {
   const [genre, setGenre] = useState("All genres");
   const [status, setStatus] = useState("All statuses");
   const [sort, setSort] = useState("Recently added");
-  const [view, setView] = useState<"grid" | "list">("grid");
+  const view = usePreferencesStore((state) => state.defaultView);
+  const setView = usePreferencesStore((state) => state.setDefaultView);
   const [limit, setLimit] = useState(100);
   const viewportColumns = useSyncExternalStore(subscribeToViewport, getViewportColumns, () => 4);
   const columns = view === "grid" ? viewportColumns : 1;
@@ -31,8 +34,10 @@ export function LibraryView() {
   const [statusMessage, setStatusMessage] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
-  const { data, isLoading, error } = useSeriesList({ query, genre, status, limit });
+  const openImport = useOpenImportDialog();
+  const { data, isLoading, error } = useSeriesList({ query, genre, status, limit, sort: sort === "Last read" ? "last-read" : undefined });
   const genres = ["All genres", ...Array.from(new Set((data?.items ?? []).flatMap((series) => series.genres))).sort()];
+  const isEmptyLibrary = data?.total === 0 && !query.trim() && genre === "All genres" && status === "All statuses";
 
   useEffect(() => {
     const requestedGenre = new URLSearchParams(window.location.search).get("genre");
@@ -42,7 +47,7 @@ export function LibraryView() {
     const result = [...(data?.items ?? [])];
     if (sort === "Title A–Z") result.sort((a, b) => a.title.localeCompare(b.title));
     if (sort === "Most chapters") result.sort((a, b) => b.chapters - a.chapters);
-    if (sort === "Reading progress") result.sort((a, b) => b.readChapters / b.chapters - a.readChapters / a.chapters);
+    if (sort === "Reading progress") result.sort((a, b) => b.readChapters / Math.max(b.chapters, 1) - a.readChapters / Math.max(a.chapters, 1));
     return result;
   }, [data?.items, sort]);
 
@@ -87,15 +92,15 @@ export function LibraryView() {
       </div>
 
       <div className="library-toolbar">
-        <label className="library-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a story, author, genre..." /><kbd>⌘ F</kbd></label>
+        <label className="library-search"><Search size={16} /><input aria-label="Search titles, authors, or genres" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a story, author, genre..." /></label>
         <span className="toolbar-separator" />
         <FilterDropdown value={genre} options={genres} onChange={setGenre} label="Filter by genre" icon={<SlidersHorizontal size={15} />} />
         <FilterDropdown value={status} options={statuses} onChange={setStatus} label="Filter by reading status" />
-        <FilterDropdown value={sort} options={["Recently added", "Title A–Z", "Most chapters", "Reading progress"]} onChange={setSort} label="Sort library" caption="SORT" className="sort-dropdown" />
+        <FilterDropdown value={sort} options={["Recently added", "Last read", "Title A–Z", "Most chapters", "Reading progress"]} onChange={setSort} label="Sort library" caption="SORT" className="sort-dropdown" />
         <span className="toolbar-separator" />
         <div className="view-switch" aria-label="Choose view mode">
-          <button className={view === "grid" ? "selected" : ""} onClick={() => setView("grid")} aria-label="Grid view"><Grid2X2 size={16} /></button>
-          <button className={view === "list" ? "selected" : ""} onClick={() => setView("list")} aria-label="List view"><List size={17} /></button>
+          <button type="button" className={view === "grid" ? "selected" : ""} onClick={() => setView("grid")} aria-label="Grid view" aria-pressed={view === "grid"}><Grid2X2 size={16} /></button>
+          <button type="button" className={view === "list" ? "selected" : ""} onClick={() => setView("list")} aria-label="List view" aria-pressed={view === "list"}><List size={17} /></button>
         </div>
       </div>
 
@@ -115,7 +120,7 @@ export function LibraryView() {
       {isLoading ? <div className="empty-state" role="status">Loading your library…</div> : null}
       {error ? <div className="empty-state" role="alert"><h2>Could not load your library.</h2><p>{error.message}</p><button className="button button-subtle" onClick={() => void queryClient.invalidateQueries({ queryKey: ["series"] })}>Try again</button></div> : null}
       {!isLoading && !error && filtered.length === 0 ? (
-        <div className="empty-state"><div><Search size={22} /></div><h2>{data?.total === 0 ? "Your library is ready for its first book." : "No stories found."}</h2><p>{data?.total === 0 ? "Scan the books folder from Import to add your CBZ, ZIP, or CBR archives." : "Try a different title, author, or filter."}</p><button className="button button-subtle" onClick={() => { setQuery(""); setGenre("All genres"); setStatus("All statuses"); }}>Clear all filters</button></div>
+        <div className="empty-state"><div>{isEmptyLibrary ? <BookOpen size={22} /> : <Search size={22} />}</div><h2>{isEmptyLibrary ? "Your library is ready for its first book." : "No stories found."}</h2><p>{isEmptyLibrary ? "Upload chapter archives or scan the books folder to add your collection." : "Try a different title, author, or filter."}</p>{isEmptyLibrary ? <button type="button" className="button button-primary" onClick={openImport}><BookOpen size={15} /> Import or scan books</button> : <button type="button" className="button button-subtle" onClick={() => { setQuery(""); setGenre("All genres"); setStatus("All statuses"); }}>Clear all filters</button>}</div>
       ) : !isLoading && !error && view === "list" ? (
         <div className="list-view">
           {filtered.map((series) => (

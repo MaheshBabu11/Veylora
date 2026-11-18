@@ -15,6 +15,7 @@ function PreferencesHydrator() {
       direction: "rtl" | "ltr";
       readerSettings: Partial<ReaderSettings>;
       autoScan: boolean;
+      defaultView: "grid" | "list";
     }>("/api/preferences"),
     enabled: Boolean(user),
     retry: false,

@@ -14,7 +14,7 @@ function numberFromName(name: string, fallback: number) {
   return match ? Number(match[1]) : fallback;
 }
 
-export async function runLibraryScan(jobId: string) {
+export async function runLibraryScan(jobId: string, workerId: string) {
   const root = await getBooksRoot();
   const archives = await listArchives(root);
   const directory = await pool.query(
@@ -25,16 +25,22 @@ export async function runLibraryScan(jobId: string) {
     [root],
   );
   const directoryId: string = directory.rows[0].id;
-  await pool.query(
-    `UPDATE scan_jobs SET directory_id = $2, total = $3, progress = 0, status = 'running', updated_at = now() WHERE id = $1`,
-    [jobId, directoryId, archives.length],
+  const claimedJob = await pool.query<{ cancelRequested: boolean }>(
+    `UPDATE scan_jobs
+     SET directory_id = $2, total = $3, progress = 0, updated_at = now()
+     WHERE id = $1 AND worker_id = $4 AND status = 'running'
+     RETURNING cancel_requested AS "cancelRequested"`,
+    [jobId, directoryId, archives.length, workerId],
   );
+  if (!claimedJob.rowCount) throw new Error("The scan worker no longer owns this job.");
 
   const errors: string[] = [];
   const chapterNumbers = new Map<string, Set<number>>();
   const seriesCoverImages = new Map<string, string | null>();
   const scannedSeriesPaths = new Set<string>();
-  for (let index = 0; index < archives.length; index += 1) {
+  let cancelled = claimedJob.rows[0].cancelRequested;
+  let scanned = 0;
+  for (let index = 0; index < archives.length && !cancelled; index += 1) {
     const archivePath = archives[index];
     try {
       const images = await listArchiveImages(archivePath);
@@ -131,11 +137,28 @@ export async function runLibraryScan(jobId: string) {
     } catch (error) {
       errors.push(`${path.relative(root, archivePath)}: ${error instanceof Error ? error.message : "Unable to read archive."}`);
     }
-    await pool.query("UPDATE scan_jobs SET progress = $2, updated_at = now() WHERE id = $1", [jobId, index + 1]);
+    const progress = await pool.query<{ cancelRequested: boolean }>(
+      `UPDATE scan_jobs SET progress = $2, updated_at = now()
+       WHERE id = $1 AND worker_id = $3 AND status = 'running'
+       RETURNING cancel_requested AS "cancelRequested"`,
+      [jobId, index + 1, workerId],
+    );
+    if (!progress.rowCount) throw new Error("The scan worker no longer owns this job.");
+    scanned = index + 1;
+    cancelled = progress.rows[0].cancelRequested;
   }
 
   const errorSummary = errors.length ? `${errors.length} archive(s) could not be indexed:\n${errors.slice(0, 100).join("\n")}` : null;
-  if (!errors.length) {
+  if (!cancelled) {
+    const finalState = await pool.query<{ cancelRequested: boolean }>(
+      `SELECT cancel_requested AS "cancelRequested"
+       FROM scan_jobs WHERE id = $1 AND worker_id = $2 AND status = 'running'`,
+      [jobId, workerId],
+    );
+    if (!finalState.rowCount) throw new Error("The scan worker no longer owns this job.");
+    cancelled = finalState.rows[0].cancelRequested;
+  }
+  if (!cancelled && !errors.length) {
     await pool.query(
       `DELETE FROM series
        WHERE directory_id = $1
@@ -147,9 +170,5 @@ export async function runLibraryScan(jobId: string) {
     `UPDATE library_directories SET status = 'active', last_scanned_at = now() WHERE id = $1`,
     [directoryId],
   );
-  await pool.query(
-    `UPDATE scan_jobs SET status = $2, progress = total, error = $3, updated_at = now() WHERE id = $1`,
-    [jobId, errors.length ? "completed_with_errors" : "completed", errorSummary],
-  );
-  return { scanned: archives.length, errors };
+  return { scanned, errors, errorSummary, cancelled };
 }

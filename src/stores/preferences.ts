@@ -6,6 +6,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 type Theme = "dark" | "light" | "system";
 type ReaderMode = "vertical" | "single";
 type Direction = "rtl" | "ltr";
+type DefaultView = "grid" | "list";
 type CustomCollection = { title: string; createdAt: number };
 export type ReaderSettings = {
   pageWidth: number;
@@ -27,6 +28,7 @@ type PreferencesState = {
   direction: Direction;
   readerSettings: ReaderSettings;
   autoScan: boolean;
+  defaultView: DefaultView;
   sidebarCollapsed: boolean;
   favorites: string[];
   collections: CustomCollection[];
@@ -37,6 +39,7 @@ type PreferencesState = {
   setDirection: (direction: Direction) => void;
   setReaderSettings: (settings: Partial<ReaderSettings>) => void;
   setAutoScan: (autoScan: boolean) => void;
+  setDefaultView: (defaultView: DefaultView) => void;
   setSidebarCollapsed: (sidebarCollapsed: boolean) => void;
   toggleFavorite: (seriesId: string) => void;
   addCollection: (title: string) => void;
@@ -48,6 +51,7 @@ type PreferencesState = {
     direction: Direction;
     readerSettings?: Partial<ReaderSettings>;
     autoScan: boolean;
+    defaultView?: DefaultView;
   }) => void;
 };
 
@@ -69,6 +73,7 @@ export const usePreferencesStore = create<PreferencesState>()(
       direction: "rtl",
       readerSettings: defaultReaderSettings,
       autoScan: true,
+      defaultView: "grid",
       sidebarCollapsed: false,
       favorites: [],
       collections: [],
@@ -83,6 +88,7 @@ export const usePreferencesStore = create<PreferencesState>()(
         savePreference("readerSettings", readerSettings);
       },
       setAutoScan: (autoScan) => { set({ autoScan }); savePreference("autoScan", autoScan); },
+      setDefaultView: (defaultView) => { set({ defaultView }); savePreference("defaultView", defaultView); },
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
       toggleFavorite: (seriesId) => set((state) => ({
         favorites: state.favorites.includes(seriesId)
@@ -100,6 +106,7 @@ export const usePreferencesStore = create<PreferencesState>()(
       })),
       hydratePreferences: (preferences) => set({
         ...preferences,
+        defaultView: preferences.defaultView ?? "grid",
         readerSettings: { ...defaultReaderSettings, ...preferences.readerSettings },
       }),
     }),

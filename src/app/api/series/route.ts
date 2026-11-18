@@ -11,7 +11,7 @@ const querySchema = z.object({
   status: z.enum(["Reading", "Plan to read", "Completed", "On hold"]).optional(),
   genre: z.string().max(80).optional(),
   featured: z.enum(["true", "false"]).optional(),
-  sort: z.enum(["recent", "updated", "title"]).default("recent"),
+  sort: z.enum(["recent", "updated", "title", "last-read"]).default("recent"),
   limit: z.coerce.number().int().min(1).max(500).default(100),
   offset: z.coerce.number().int().min(0).default(0),
 });

@@ -197,6 +197,17 @@ export const scanJobs = pgTable("scan_jobs", {
   progress: integer("progress").notNull().default(0),
   total: integer("total").notNull().default(0),
   error: text("error"),
+  attempts: integer("attempts").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(3),
+  availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
+  workerId: text("worker_id"),
+  lockedAt: timestamp("locked_at", { withTimezone: true }),
+  cancelRequested: boolean("cancel_requested").notNull().default(false),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-}, (table) => [index("scan_jobs_status_idx").on(table.status, table.createdAt)]);
+}, (table) => [
+  index("scan_jobs_status_idx").on(table.status, table.createdAt),
+  index("scan_jobs_claim_idx").on(table.status, table.availableAt, table.createdAt),
+]);

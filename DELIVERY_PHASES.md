@@ -26,7 +26,8 @@ Status reflects implementation and verification in the current local environment
 - The top-bar Import dialog can upload up to 100 CBZ/ZIP/CBR archives per request, assign a series title and unique chapter numbers, optionally save author/description/genre details, reject overwrites, and queue library indexing.
 - The Node server watches the configured books directory, debounces and waits for archive writes to settle, and queues indexing when archives are added or updated. Automatic scanning can be disabled in Settings; manual scans and upload indexing remain available.
 - Series details are editable, user-defined genres can be assigned to series, and custom cover images can be uploaded alongside the series archives.
-- **Pending:** Image thumbnail processing and a durable worker with cancellation/retry. Scan jobs currently execute in the Next.js process and may not survive a restart.
+- PostgreSQL-backed scan jobs are claimed by a lease-based worker started with the Next.js Node server. Abandoned jobs are recovered after lease expiry, transient failures retry with backoff, and Settings exposes recent history plus cancel/retry actions.
+- **Pending:** Image thumbnail processing, durable background processing for uploads themselves, and acceptance tests proving crash recovery and cancellation under load. A running scan restarts from the beginning after a crash.
 
 ## Phase 5 — Persistence: Partial
 
@@ -49,7 +50,7 @@ Status reflects implementation and verification in the current local environment
 
 - Scan the configured library and confirm the resulting series/chapter/page counts and reader rendering.
 - Verify health, preferences, search, progress, collections, bookmarks, and page-serving endpoints against the running app.
-- Add durable job execution and failure recovery before relying on long scans in production.
+- Verify scan recovery after a server restart and cancellation/retry behavior against the configured database before relying on long scans in production.
 - Run the Phase 7 benchmarks and security/performance checks; do not claim production readiness until they pass.
 
 ## Future work

@@ -6,6 +6,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { z } from "zod";
+import { getAuthenticatedUser } from "@/server/auth";
 import { assertSameOrigin, apiError, HttpError } from "@/server/http";
 import { findSeriesCoverImage, getBooksRoot, isWithinRoot } from "@/server/filesystem";
 import { listArchiveImages } from "@/server/archive";
@@ -147,6 +148,7 @@ export async function POST(request: Request) {
   const createdPaths: string[] = [];
   try {
     assertSameOrigin(request);
+    if (!await getAuthenticatedUser(request)) throw new HttpError(401, "Please sign in to continue.");
     const root = await getBooksRoot();
     const upload = await receiveFiles(request, root);
     temporaryPaths.push(...upload.files.map((file) => file.path));

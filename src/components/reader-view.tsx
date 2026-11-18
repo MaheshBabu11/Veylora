@@ -31,6 +31,7 @@ function ReaderStackPage({ url, alt, pageNumber, zoom }: { url: string; alt: str
 export function ReaderView({ chapterId }: { chapterId: string }) {
   const readerRef = useRef<HTMLElement | null>(null);
   const readerScrollRef = useRef<HTMLDivElement | null>(null);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
   const hasRestoredProgress = useRef(false);
   const { data: chapter, isLoading, error } = useChapter(chapterId);
   const seriesId = chapter?.series_id ?? "";
@@ -115,14 +116,29 @@ export function ReaderView({ chapterId }: { chapterId: string }) {
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "ArrowRight") step(direction === "rtl" ? -1 : 1);
-      if (event.key === "ArrowLeft") step(direction === "rtl" ? 1 : -1);
-      if (event.key === "Escape") setSettingsOpen(false);
-      if (event.key.toLowerCase() === "f") toggleFullscreen();
+      if (event.key === "Escape") {
+        setSettingsOpen(false);
+        return;
+      }
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.isContentEditable || target.matches("input, textarea, select, [role='textbox']"))) return;
+      if (settingsOpen) return;
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        step(direction === "rtl" ? -1 : 1);
+      }
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        step(direction === "rtl" ? 1 : -1);
+      }
+      if (event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        toggleFullscreen();
+      }
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [direction, step, toggleFullscreen]);
+  }, [direction, settingsOpen, step, toggleFullscreen]);
 
   if (isLoading) return <main className="reader-app"><div className="empty-state" role="status">Opening chapter…</div></main>;
   if (error || !chapter) return <main className="reader-app"><div className="empty-state" role="alert"><h2>Could not open this chapter.</h2><p>{error?.message ?? "Chapter not found."}</p><Link className="button button-subtle" href="/library">Back to library</Link></div></main>;
@@ -155,7 +171,23 @@ export function ReaderView({ chapterId }: { chapterId: string }) {
         </div>
       </div>
     ) : (
-      <div className="single-page-stage"><button className="page-nav page-nav-left" aria-label="Previous page" onClick={() => step(direction === "rtl" ? 1 : -1)}><ChevronLeft size={20} /></button><div className="reader-page single-reader-page"><Image src={pageByNumber.get(page) ?? pages[0].url} alt={`${chapter.series.title}, ${chapter.title}, page ${page}`} fill unoptimized sizes="(max-width: 800px) 80vw, 700px" style={{ objectFit: "contain", transform: `scale(${zoom / 100})` }} /><span className="reader-page-number">{String(page).padStart(2, "0")}</span></div><button className="page-nav page-nav-right" aria-label="Next page" onClick={() => step(direction === "rtl" ? -1 : 1)}><ChevronRight size={20} /></button></div>
+      <div className="single-page-stage" onTouchStart={(event) => {
+        const touch = event.changedTouches[0];
+        touchStart.current = { x: touch.clientX, y: touch.clientY };
+      }} onTouchEnd={(event) => {
+        const start = touchStart.current;
+        touchStart.current = null;
+        if (!start) return;
+        const touch = event.changedTouches[0];
+        const deltaX = touch.clientX - start.x;
+        const deltaY = touch.clientY - start.y;
+        if (Math.abs(deltaX) < 48 || Math.abs(deltaX) < Math.abs(deltaY) * 1.25) return;
+        step(deltaX < 0 ? (direction === "rtl" ? -1 : 1) : (direction === "rtl" ? 1 : -1));
+      }} onTouchCancel={() => { touchStart.current = null; }}>
+        <button type="button" className="page-nav page-nav-left" aria-label="Previous page" onClick={() => step(direction === "rtl" ? 1 : -1)}><ChevronLeft size={20} /></button>
+        <div className="reader-page single-reader-page"><Image src={pageByNumber.get(page) ?? pages[0].url} alt={`${chapter.series.title}, ${chapter.title}, page ${page}`} fill unoptimized sizes="(max-width: 800px) 80vw, 700px" style={{ objectFit: "contain", transform: `scale(${zoom / 100})` }} /><span className="reader-page-number">{String(page).padStart(2, "0")}</span></div>
+        <button type="button" className="page-nav page-nav-right" aria-label="Next page" onClick={() => step(direction === "rtl" ? -1 : 1)}><ChevronRight size={20} /></button>
+      </div>
     )}
     <footer className={`reader-bottom ${toolbarVisible && bottomBarVisible ? "" : "reader-hidden"}`}>
       {previousChapter ? <Link href={`/reader/${previousChapter.id}`} className="reader-chapter-nav"><ChevronLeft size={17} /><span>Previous chapter</span></Link> : <span className="reader-chapter-nav" />}
@@ -167,6 +199,7 @@ export function ReaderView({ chapterId }: { chapterId: string }) {
       {nextChapter ? <Link href={`/reader/${nextChapter.id}`} className="reader-chapter-nav next"><span>Next chapter</span><ChevronRight size={17} /></Link> : <span className="reader-chapter-nav next" />}
       <button className="reader-bottom-toggle" onClick={() => setToolbarVisible((value) => !value)} aria-label="Hide reader controls"><ArrowDown size={15} /></button>
     </footer>
+    {!toolbarVisible && <button type="button" className="reader-controls-reveal" onClick={() => setToolbarVisible(true)} aria-label="Show reader controls">Show controls</button>}
     {settingsOpen && <div className="reader-settings-popover">
       <div className="reader-settings-head">
         <span>Reading settings</span>

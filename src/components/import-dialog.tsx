@@ -35,6 +35,7 @@ export function ImportDialog({ scanning, initialSeries, onClose, onScanLibrary, 
   const [files, setFiles] = useState<File[]>([]);
   const [chapterNumbers, setChapterNumbers] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState("");
   const { data: library, isLoading: loadingSeries, error: seriesError } = useSeriesList({ limit: 500, sort: "title", enabled: !initialSeries });
   const existingSeries = library?.items ?? [];
@@ -62,6 +63,7 @@ export function ImportDialog({ scanning, initialSeries, onClose, onScanLibrary, 
     event.preventDefault();
     setError("");
     setUploading(true);
+    setUploadProgress(0);
     try {
       const chapters = files.map((file, index) => ({
         file,
@@ -71,7 +73,7 @@ export function ImportDialog({ scanning, initialSeries, onClose, onScanLibrary, 
         ...(seriesMode === "existing" ? { seriesId } : { seriesTitle }),
         chapters,
         ...(seriesMode === "new" ? { authorName, description, genres } : {}),
-      });
+      }, setUploadProgress);
       await onImportComplete(result);
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "The archives could not be uploaded.");
@@ -149,6 +151,7 @@ export function ImportDialog({ scanning, initialSeries, onClose, onScanLibrary, 
             </label>
           </details>}
 
+          {uploading && <div className="upload-progress"><div><span role="status">{uploadProgress === 100 ? "Files sent · saving chapters…" : "Uploading chapter archives…"}</span><strong>{uploadProgress}%</strong></div><progress aria-label="Archive upload progress" max="100" value={uploadProgress} /></div>}
           {error && <p className="import-upload-error" role="alert">{error}</p>}
           <button className="import-upload-submit" type="submit" disabled={uploading || scanning || files.length === 0 || (seriesMode === "existing" && !seriesId)}>
             <Upload size={15} />{uploading ? "Uploading…" : scanning ? "Library scan in progress…" : files.length ? `Upload ${files.length} chapter${files.length === 1 ? "" : "s"}` : "Upload chapters"}

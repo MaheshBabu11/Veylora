@@ -9,7 +9,9 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   try {
     const { id } = z.object({ id: z.string().uuid() }).parse(await context.params);
     const result = await pool.query(
-      "SELECT id, status, progress, total, error, created_at, updated_at FROM scan_jobs WHERE id = $1",
+      `SELECT id, status, progress, total, error, attempts, max_attempts,
+              cancel_requested, created_at, updated_at, started_at, completed_at
+       FROM scan_jobs WHERE id = $1`,
       [id],
     );
     if (!result.rowCount) throw new HttpError(404, "Scan job not found.");
