@@ -629,6 +629,7 @@ kbd { padding: 2px 5px; border: 1px solid #353a32; border-radius: 4px; color: #8
 .reader-scroll { height: 100%; overflow-y: auto; padding: 70px 20px 80px; scrollbar-color: #373b34 transparent; scrollbar-width: thin; }
 .reader-page-stack { width: 100%; margin: 0 auto; display: grid; gap: 0; }
 .reader-page { position: relative; width: 100%; aspect-ratio: 1.414; overflow: hidden; color: #1e2522; }
+.reader-image-picture { position: absolute; inset: 0; display: block; }
 .page-paper-noise { position: absolute; z-index: 4; inset: 0; opacity: .08; pointer-events: none; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.78' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E"); }
 .page-scene { position: absolute; inset: 7% 9%; overflow: hidden; border: 1px solid #282e2a99; background: linear-gradient(180deg,#c8d1d0 0%,#e0ddd4 67%,#9b9c8b 68%,#797c70); }
 .scene-sun { position: absolute; top: 16%; left: 62%; width: 17%; aspect-ratio: 1; border-radius: 50%; background: #e1bd8d99; }
@@ -2176,6 +2177,9 @@ html[data-theme="system"] .dashboard-ritual-copy small { color: var(--text-muted
 .upload-progress { display: grid; gap: 7px; margin-top: 3px; }
 .upload-progress > div { display: flex; justify-content: space-between; gap: 12px; color: var(--text-muted); font-size: 10px; }
 .upload-progress strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.upload-cancel { justify-self: end; padding: 3px 0; color: var(--text-muted); border: 0; background: transparent; font-size: 10px; cursor: pointer; }
+.upload-cancel:hover { color: var(--text); }
+.upload-cancel:disabled { cursor: progress; opacity: .7; }
 .single-page-stage { touch-action: pan-y; }
 .reader-controls-reveal { position: fixed; z-index: 31; right: 18px; bottom: 18px; min-height: 40px; padding: 0 13px; border: 1px solid var(--surface-border); border-radius: 999px; color: var(--text); background: color-mix(in srgb, var(--surface-1) 92%, transparent); box-shadow: 0 5px 20px #0005; font-size: 11px; cursor: pointer; backdrop-filter: blur(12px); }
 

@@ -9,6 +9,9 @@ export type SeriesFilters = {
   genre?: string;
   featuredOnly?: boolean;
   collectionId?: string;
+  favoriteOnly?: boolean;
+  inProgressOnly?: boolean;
+  hasHistory?: boolean;
   sort?: string;
   limit?: number;
   offset?: number;
@@ -103,11 +106,16 @@ export async function listSeries(filters: SeriesFilters) {
   const id = filters.id || null;
   const limit = Math.min(Math.max(filters.limit ?? 100, 1), 500);
   const offset = Math.max(filters.offset ?? 0, 0);
-  const sort = filters.sort === "title" ? "m.title ASC"
-    : filters.sort === "updated" ? "m.updated_at DESC"
-      : filters.sort === "last-read" ? "history.read_at DESC NULLS LAST, m.title ASC"
-        : "m.created_at DESC";
-  const filterSql = `WHERE ($2::text IS NULL OR m.search_vector @@ plainto_tsquery('simple', $2) OR m.title ILIKE '%' || $2 || '%')
+  const sort = filters.sort === "title" ? "m.title ASC, m.id ASC"
+    : filters.sort === "updated" ? "m.updated_at DESC, m.id DESC"
+      : filters.sort === "last-read" ? "history.read_at DESC NULLS LAST, m.title ASC, m.id ASC"
+        : filters.sort === "chapters" ? "chapter_stats.chapter_count DESC, m.title ASC, m.id ASC"
+          : filters.sort === "progress"
+            ? "CASE WHEN chapter_stats.chapter_count = 0 THEN 0 ELSE COALESCE(progress.chapter_number, 0)::numeric / chapter_stats.chapter_count END DESC, m.title ASC, m.id ASC"
+            : "m.created_at DESC, m.id DESC";
+  const filterSql = `WHERE ($2::text IS NULL OR m.search_vector @@ plainto_tsquery('simple', $2) OR m.title ILIKE '%' || $2 || '%'
+    OR EXISTS (SELECT 1 FROM series_authors ma JOIN authors a ON a.id = ma.author_id WHERE ma.series_id = m.id AND a.name ILIKE '%' || $2 || '%')
+    OR EXISTS (SELECT 1 FROM series_genres mg JOIN genres g ON g.id = mg.genre_id WHERE mg.series_id = m.id AND g.name ILIKE '%' || $2 || '%'))
     AND ($3::text IS NULL OR COALESCE(us.status, 'Plan to read') = $3)
     AND ($4::text IS NULL OR EXISTS (SELECT 1 FROM series_genres mg JOIN genres g ON g.id = mg.genre_id WHERE mg.series_id = m.id AND g.name = $4))
     AND ($5::uuid IS NULL OR m.id = $5)
@@ -115,10 +123,17 @@ export async function listSeries(filters: SeriesFilters) {
     AND ($7::uuid IS NULL OR EXISTS (
       SELECT 1 FROM collection_series cs JOIN collections c ON c.id = cs.collection_id
       WHERE cs.collection_id = $7 AND cs.series_id = m.id AND c.user_id = $1
-    ))`;
-  const params = [userId, query, status, genre, id, featuredOnly, collectionId];
+    ))
+    AND ($8::boolean IS NULL OR COALESCE(us.favorite, false) = $8)
+    AND ($9::boolean IS NULL OR EXISTS (
+      SELECT 1 FROM reading_progress rp WHERE rp.user_id = $1 AND rp.series_id = m.id AND rp.last_chapter_id IS NOT NULL
+    ) = $9)
+    AND ($10::boolean IS NULL OR EXISTS (
+      SELECT 1 FROM reading_history rh WHERE rh.user_id = $1 AND rh.series_id = m.id
+    ) = $10)`;
+  const params = [userId, query, status, genre, id, featuredOnly, collectionId, filters.favoriteOnly ?? null, filters.inProgressOnly ?? null, filters.hasHistory ?? null];
   const countResult = await pool.query(`SELECT count(*)::int AS total ${userSeriesJoin} ${filterSql}`, params);
-  const result = await pool.query(`${seriesSql} ${filterSql} ORDER BY ${sort} LIMIT $8 OFFSET $9`, [...params, limit, offset]);
+  const result = await pool.query(`${seriesSql} ${filterSql} ORDER BY ${sort} LIMIT $11 OFFSET $12`, [...params, limit, offset]);
   return { items: result.rows.map(toSeries), total: countResult.rows[0].total as number, limit, offset };
 }
 

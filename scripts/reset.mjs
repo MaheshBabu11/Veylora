@@ -28,10 +28,13 @@ if (!process.argv.includes("--confirm")) {
       const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
       try {
         const activeJobs = await pool.query(
-          "SELECT 1 FROM scan_jobs WHERE status IN ('queued', 'running') LIMIT 1",
+          `SELECT 1 FROM scan_jobs WHERE status IN ('queued', 'running')
+           UNION ALL
+           SELECT 1 FROM upload_jobs WHERE status IN ('queued', 'running')
+           LIMIT 1`,
         );
         if (activeJobs.rowCount) {
-          throw new Error("A library scan is active. Wait for it to finish before resetting the database.");
+          throw new Error("A library scan or upload is active. Wait for it to finish before resetting the database.");
         }
 
         const client = await pool.connect();
@@ -51,7 +54,9 @@ if (!process.argv.includes("--confirm")) {
             genres,
             series,
             library_directories,
+            auth_rate_limits,
             user_preferences,
+            upload_jobs,
             scan_jobs
             RESTART IDENTITY`);
           await client.query("INSERT INTO user_preferences(user_id) VALUES ('local')");

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { pool } from "@/server/db";
 import { createSession, sessionCookie, verifyPassword } from "@/server/auth";
 import { apiError, HttpError, readJson } from "@/server/http";
+import { enforceRateLimit } from "@/server/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +15,7 @@ const credentialsSchema = z.object({
 export async function POST(request: Request) {
   try {
     const credentials = credentialsSchema.parse(await readJson(request));
+    await enforceRateLimit("login", credentials.username, 10, 15 * 60);
     const result = await pool.query<{ id: string; username: string; password_hash: string | null }>(
       "SELECT id, username, password_hash FROM users WHERE username = $1",
       [credentials.username],

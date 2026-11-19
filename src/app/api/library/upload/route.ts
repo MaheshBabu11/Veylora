@@ -1,17 +1,15 @@
 import Busboy from "busboy";
 import { randomUUID } from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
-import { lstat, mkdir, open, readdir, realpath, unlink } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { lstat, mkdir, readdir, realpath, unlink } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { z } from "zod";
 import { getAuthenticatedUser } from "@/server/auth";
-import { assertSameOrigin, apiError, HttpError } from "@/server/http";
-import { findSeriesCoverImage, getBooksRoot, isWithinRoot } from "@/server/filesystem";
-import { listArchiveImages } from "@/server/archive";
+import { apiError, assertSameOrigin, HttpError } from "@/server/http";
+import { getBooksRoot, isWithinRoot } from "@/server/filesystem";
 import { pool } from "@/server/db";
-import { metadataSlug } from "@/server/metadata";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,18 +28,25 @@ const seriesTitleSchema = z.string().trim().min(1).max(100).refine(
 );
 
 async function removeFiles(paths: string[]) {
-  for (const filePath of paths) {
-    try {
-      await unlink(filePath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        console.error("[upload] could not remove temporary file", error);
-      }
+  await Promise.all(paths.map((filePath) => unlink(filePath).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      console.error("[upload] could not remove staged archive", { filePath, error });
     }
-  }
+  })));
 }
 
-async function receiveFiles(request: Request, root: string) {
+async function getStagingDirectory(root: string) {
+  const directory = path.join(root, ".veylora-upload-staging");
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const info = await lstat(directory);
+  const canonical = await realpath(directory);
+  if (!info.isDirectory() || info.isSymbolicLink() || !isWithinRoot(root, canonical)) {
+    throw new HttpError(400, "The upload staging folder must be a real directory inside the configured books folder.");
+  }
+  return canonical;
+}
+
+async function receiveFiles(request: Request, stagingDirectory: string) {
   const contentType = request.headers.get("content-type");
   if (!contentType?.toLowerCase().startsWith("multipart/form-data")) {
     throw new HttpError(415, "Use a multipart form to upload archive files.");
@@ -88,7 +93,8 @@ async function receiveFiles(request: Request, root: string) {
       return;
     }
 
-    const temporaryPath = path.join(root, `.veylora-upload-${randomUUID()}${extension}`);
+    const stagedName = `${randomUUID()}${extension}`;
+    const temporaryPath = path.join(stagingDirectory, stagedName);
     temporaryPaths.push(temporaryPath);
     stream.on("data", (chunk: Buffer) => {
       totalBytes += chunk.length;
@@ -131,7 +137,7 @@ async function receiveFiles(request: Request, root: string) {
     if (streamFailure) throw streamFailure.reason;
     if (failure) throw failure;
     const files = temporaryPaths.map((filePath) => ({
-      path: filePath,
+      stagedName: path.basename(filePath),
       extension: path.extname(filePath).toLowerCase(),
     }));
     return { files, chapterNumbers, fields };
@@ -143,15 +149,60 @@ async function receiveFiles(request: Request, root: string) {
   }
 }
 
+async function assertUploadDestination(root: string, seriesId: string | undefined, title: string | undefined) {
+  if (seriesId) {
+    const selectedSeries = await pool.query(
+      "SELECT id, title, source_path FROM series WHERE id = $1",
+      [seriesId],
+    );
+    if (!selectedSeries.rows[0]) throw new HttpError(404, "The selected series was not found.");
+    const sourcePath = selectedSeries.rows[0].source_path;
+    if (typeof sourcePath !== "string" || !path.isAbsolute(sourcePath)) {
+      throw new HttpError(409, "The selected series is not linked to a local archive folder.");
+    }
+    let directoryInfo;
+    let canonicalDirectory: string;
+    try {
+      directoryInfo = await lstat(sourcePath);
+      canonicalDirectory = await realpath(sourcePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new HttpError(409, "The selected series folder no longer exists in the configured books folder.");
+      }
+      throw error;
+    }
+    if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink() || !isWithinRoot(root, canonicalDirectory)) {
+      throw new HttpError(400, "The selected series folder must be inside the configured books folder.");
+    }
+    return { title: String(selectedSeries.rows[0].title), directory: canonicalDirectory };
+  }
+
+  if (!title) throw new HttpError(400, "Enter a name for the new series.");
+  const directory = path.join(root, title);
+  try {
+    const info = await lstat(directory);
+    const canonicalDirectory = await realpath(directory);
+    if (!info.isDirectory() || info.isSymbolicLink() || !isWithinRoot(root, canonicalDirectory)) {
+      throw new HttpError(400, "The series folder must be a real directory inside the configured books folder.");
+    }
+    return { title, directory: canonicalDirectory };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    return { title, directory };
+  }
+}
+
 export async function POST(request: Request) {
-  const temporaryPaths: string[] = [];
-  const createdPaths: string[] = [];
+  let temporaryPaths: string[] = [];
+  let queued = false;
   try {
     assertSameOrigin(request);
-    if (!await getAuthenticatedUser(request)) throw new HttpError(401, "Please sign in to continue.");
+    const user = await getAuthenticatedUser(request);
+    if (!user) throw new HttpError(401, "Please sign in to continue.");
     const root = await getBooksRoot();
-    const upload = await receiveFiles(request, root);
-    temporaryPaths.push(...upload.files.map((file) => file.path));
+    const stagingDirectory = await getStagingDirectory(root);
+    const upload = await receiveFiles(request, stagingDirectory);
+    temporaryPaths = upload.files.map(({ stagedName }) => path.join(stagingDirectory, stagedName));
 
     const seriesId = upload.fields.seriesId ? seriesIdSchema.parse(upload.fields.seriesId) : undefined;
     if (!seriesId && upload.fields.seriesId) throw new HttpError(400, "The selected series is invalid.");
@@ -174,168 +225,43 @@ export async function POST(request: Request) {
       throw new HttpError(400, "Each uploaded archive must have a different chapter number.");
     }
 
-    for (let index = 0; index < upload.files.length; index += 1) {
-      try {
-        const pages = await listArchiveImages(upload.files[index].path);
-        if (!pages.length) throw new Error("No supported page images.");
-      } catch {
-        throw new HttpError(400, `Archive ${index + 1} is invalid or contains no supported page images.`);
-      }
-    }
-
-    let targetTitle: string;
-    let canonicalDirectory: string;
-    let existingSeriesId: string | undefined;
-    if (seriesId) {
-      const selectedSeries = await pool.query(
-        "SELECT id, title, source_path FROM series WHERE id = $1",
-        [seriesId],
-      );
-      if (!selectedSeries.rows[0]) throw new HttpError(404, "The selected series was not found.");
-      const sourcePath = selectedSeries.rows[0].source_path;
-      if (typeof sourcePath !== "string" || !path.isAbsolute(sourcePath)) {
-        throw new HttpError(409, "The selected series is not linked to a local archive folder.");
-      }
-      let directoryInfo;
-      try {
-        directoryInfo = await lstat(sourcePath);
-        canonicalDirectory = await realpath(sourcePath);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-          throw new HttpError(409, "The selected series folder no longer exists in the configured books folder.");
-        }
-        throw error;
-      }
-      if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink() || !isWithinRoot(root, canonicalDirectory)) {
-        throw new HttpError(400, "The selected series folder must be inside the configured books folder.");
-      }
-      targetTitle = String(selectedSeries.rows[0].title);
-      existingSeriesId = String(selectedSeries.rows[0].id);
-    } else {
-      if (!title) throw new HttpError(400, "Enter a name for the new series.");
-      targetTitle = title;
-      const requestedSeriesDirectory = path.join(root, targetTitle);
-      await mkdir(requestedSeriesDirectory, { recursive: true, mode: 0o700 });
-      const directoryInfo = await lstat(requestedSeriesDirectory);
-      canonicalDirectory = await realpath(requestedSeriesDirectory);
-      if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink() || !isWithinRoot(root, canonicalDirectory)) {
-        throw new HttpError(400, "The series folder must be a real directory inside the configured books folder.");
-      }
-    }
-    const coverImagePath = await findSeriesCoverImage(canonicalDirectory);
-
-    const existingNumbers = new Set((await readdir(canonicalDirectory, { withFileTypes: true }))
+    const destination = await assertUploadDestination(root, seriesId, title);
+    const existingNumbers = new Set((await readdir(destination.directory, { withFileTypes: true }).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }))
       .filter((entry) => entry.isFile() && IMAGE_ARCHIVE_EXTENSIONS.has(path.extname(entry.name).toLowerCase()))
       .map((entry) => entry.name.match(/(?:chapter|ch|vol(?:ume)?)[ ._-]*(\d+)/i)?.[1])
       .filter((number): number is string => Boolean(number))
       .map(Number));
-
-    for (let index = 0; index < upload.files.length; index += 1) {
-      const { path: temporaryPath, extension } = upload.files[index];
-      const chapterNumber = numbers[index];
-      if (existingNumbers.has(chapterNumber)) {
-        throw new HttpError(409, `Chapter ${chapterNumber} already exists in "${targetTitle}".`);
+    for (const number of numbers) {
+      if (existingNumbers.has(number)) {
+        throw new HttpError(409, `Chapter ${number} already exists in "${destination.title}".`);
       }
-      const target = path.join(canonicalDirectory, `Chapter ${String(chapterNumber).padStart(3, "0")}${extension}`);
-      let destination: Awaited<ReturnType<typeof open>>;
-      try {
-        destination = await open(target, "wx", 0o600);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-          throw new HttpError(409, `Chapter ${chapterNumber} already exists in "${targetTitle}".`);
-        }
-        throw error;
-      }
-      createdPaths.push(target);
-      await pipeline(createReadStream(temporaryPath), destination.createWriteStream());
-      existingNumbers.add(chapterNumber);
     }
 
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      const directory = await client.query(
-        `INSERT INTO library_directories(path, status)
-         VALUES ($1, 'active')
-         ON CONFLICT(path) DO UPDATE SET status = 'active'
-         RETURNING id`,
-        [root],
-      );
-      if (existingSeriesId) {
-         const target = await client.query(
-           "SELECT id FROM series WHERE id = $1 FOR UPDATE",
-           [existingSeriesId],
-         );
-         if (!target.rows[0]) throw new HttpError(404, "The selected series was removed before the upload completed.");
-         if (coverImagePath) {
-           await client.query(
-             "UPDATE series SET cover_image_path = $2, updated_at = now() WHERE id = $1",
-             [existingSeriesId, coverImagePath],
-           );
-         }
-      } else {
-         const series = await client.query(
-           `INSERT INTO series(title, description, source_path, directory_id, cover_path, cover_image_path)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT(source_path) DO UPDATE SET
-              title = COALESCE(series.title_override, EXCLUDED.title),
-              description = CASE WHEN $7::boolean THEN EXCLUDED.description ELSE series.description END,
-              directory_id = EXCLUDED.directory_id,
-              cover_path = COALESCE(series.cover_path, EXCLUDED.cover_path),
-              cover_image_path = COALESCE(EXCLUDED.cover_image_path, series.cover_image_path),
-              updated_at = now()
-            RETURNING id`,
-           [title, description ?? "", canonicalDirectory, directory.rows[0].id, createdPaths[0], coverImagePath, Boolean(description)],
-         );
-         const seriesId: string = series.rows[0].id;
-
-         if (authorName) {
-           const author = await client.query(
-             `INSERT INTO authors(name, slug)
-              VALUES ($1, $2)
-              ON CONFLICT(slug) DO UPDATE SET name = EXCLUDED.name
-              RETURNING id`,
-             [authorName, metadataSlug(authorName)],
-           );
-           await client.query(
-             "INSERT INTO series_authors(series_id, author_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-             [seriesId, author.rows[0].id],
-           );
-         }
-
-         for (const genreName of genreNames) {
-           const genre = await client.query(
-             `INSERT INTO genres(name, slug)
-              VALUES ($1, $2)
-              ON CONFLICT(slug) DO UPDATE SET name = EXCLUDED.name
-              RETURNING id`,
-             [genreName, metadataSlug(genreName)],
-           );
-           await client.query(
-             "INSERT INTO series_genres(series_id, genre_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
-             [seriesId, genre.rows[0].id],
-           );
-         }
-      }
-      await client.query("COMMIT");
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
-
-    return Response.json({
-      seriesTitle: targetTitle,
-      uploaded: createdPaths.map((filePath, index) => ({
+    const jobId = randomUUID();
+    const payload = {
+      ...(seriesId ? { seriesId } : { seriesTitle: title }),
+      ...(authorName ? { authorName } : {}),
+      ...(description !== undefined ? { description } : {}),
+      genreNames,
+      chapters: upload.files.map((file, index) => ({
+        stagedName: file.stagedName,
+        extension: file.extension,
         chapterNumber: numbers[index],
-        fileName: path.basename(filePath),
       })),
-    }, { status: 201 });
+    };
+    const job = await pool.query<{ id: string }>(
+      `INSERT INTO upload_jobs(id, user_id, status, progress, total, payload)
+       VALUES ($1, $2, 'queued', 0, $3, $4::jsonb)
+       RETURNING id`,
+      [jobId, user.id, upload.files.length, JSON.stringify(payload)],
+    );
+    queued = true;
+    return Response.json({ id: job.rows[0].id, status: "queued" }, { status: 202 });
   } catch (error) {
-    await removeFiles(createdPaths);
-    return apiError(error, "upload library archives");
-  } finally {
-    await removeFiles(temporaryPaths);
+    if (!queued) await removeFiles(temporaryPaths);
+    return apiError(error, "queue library archive upload");
   }
 }

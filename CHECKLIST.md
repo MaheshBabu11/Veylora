@@ -97,7 +97,7 @@ Quick reference for implementation priorities and progress tracking.
 - [x] GET `/api/health` - Health check
 - [x] Database connection validation
 - [x] Shared API error handling
-- [ ] Rate limiting configuration
+- [x] Database-backed throttling for sign-in and account creation
 
 ---
 
@@ -108,6 +108,7 @@ Quick reference for implementation priorities and progress tracking.
 - [x] Prevent path traversal attacks
 - [ ] Permission checks
 - [x] Directory watching setup
+- [x] Reconcile removed and renamed archives after successful scans
 
 ### Archive Support
 - [x] Support CBZ format
@@ -116,6 +117,7 @@ Quick reference for implementation priorities and progress tracking.
 - [x] Archive enumeration
 - [x] Infer series/chapter metadata and index archive pages
 - [x] Error handling for corrupted files
+- [x] Limit archive entry counts and expanded size before indexing
 
 ### Import Queue
 - [ ] Bull/BullMQ setup
@@ -125,7 +127,7 @@ Quick reference for implementation priorities and progress tracking.
 - [x] Durable PostgreSQL scan worker with lease-based recovery
 - [x] Scan cancellation, automatic retry with backoff, and manual retry
 - [x] Recent scan history in Settings
-- [ ] Background processing, cancellation, retry, and history for archive uploads
+- [x] Durable archive upload jobs with progress, cancellation, retry, and history
 
 ### Caching & Processing
 - [x] Page extraction from archives
@@ -133,11 +135,12 @@ Quick reference for implementation priorities and progress tracking.
 - [ ] LRU memory cache
 - [x] Cache invalidation
 - [x] Disk usage monitoring
+- [x] Account responsive WebP derivatives in cache size, pruning, and clearing
 
 ### Image Processing
 - [ ] Generate thumbnails
-- [ ] Create responsive variants
-- [ ] Image format optimization
+- [x] Create bounded responsive reader variants
+- [x] WebP reader optimization while preserving original GIFs
 - [x] Lazy loading implementation
 - [ ] Process image queue
 
@@ -248,8 +251,14 @@ Quick reference for implementation priorities and progress tracking.
 ### Virtual Scrolling
 - [x] Optimize cell sizes
 - [x] Configure overscan
+- [x] Server-paginated library browsing with database-backed full-result sorting and filtering
 - [ ] Scroll position restoration
 - [ ] Test with 100k+ items
+
+### Reader Rendering
+- [x] Virtualize vertical chapter pages and retain saved-page navigation
+- [x] Bound extracted archive-page cache with LRU pruning
+- [ ] Add responsive image variants without duplicating unbounded cache data
 
 ### Database Optimization
 - [x] Add B-tree indexes
@@ -276,39 +285,40 @@ Quick reference for implementation priorities and progress tracking.
 - [x] Input validation on API routes and uploads
 - [ ] Content sanitization
 - [x] Same-origin checks on state-changing requests
-- [ ] Rate limiting
-- [ ] Session security
-- [ ] Content Security Policy
+- [x] Database-backed rate limits on sign-in and account creation
+- [x] HttpOnly, SameSite=Lax session cookies with production Secure flag
+- [x] Nonce-based Content Security Policy and baseline browser security headers
 - [x] SQL injection prevention (parameterized database queries)
 - [x] File upload validation
 
 ### Integration Testing
-- [ ] End-to-end workflows
+- [x] API integration workflows for authentication, upload status/cancellation, scans, collections, and reading progress
 - [ ] Data consistency
 - [ ] Error scenarios
 - [ ] Concurrent operations
-- [ ] Archive imports
+- [ ] Full archive processing through worker completion
 
 ### Load Testing
 - [ ] Simulate 1000+ concurrent users
 - [ ] Database pool testing
 - [ ] Resource monitoring
 - [ ] Bottleneck identification
-- [ ] Performance baselines
+- [x] Generated large-library query performance baseline
 
 ### Monitoring
 - [ ] Error tracking (Sentry)
 - [ ] Web Vitals monitoring
 - [ ] Metrics dashboard
-- [ ] Alert configuration
+- [x] Prometheus metrics endpoint and alert rules
 - [ ] Incident procedures
 
 ### Documentation
 - [ ] API documentation (OpenAPI)
 - [ ] Architecture decisions
 - [ ] Database schema docs
-- [ ] Deployment procedures
-- [ ] Troubleshooting guide
+- [x] Database backup, restore, and migration recovery procedures
+- [x] Self-hosted Node deployment and health-check procedures
+- [x] Operational troubleshooting and job-monitoring guide
 
 ---
 
@@ -354,10 +364,10 @@ Quick reference for implementation priorities and progress tracking.
 Phase 1: ✅ 100% Complete
 Phase 2: ✅ 100% Complete
 Phase 3: 🟡 Implemented; app-runtime verification and remaining items open
-Phase 4: 🟡 Partial; durable scan jobs are implemented; upload workers and image processing remain
+Phase 4: 🟡 Partial; durable scan and upload jobs are implemented; thumbnails and processing queue remain
 Phase 5: 🟡 Partial; sync, exports, and several user workflows remain
 Phase 6: 🟡 Partial; optimistic updates, error boundaries, and missing hooks remain
-Phase 7: 🟡 Partial; testing, security review, load, and performance verification remain
+Phase 7: 🟡 Partial; integration workflows, operational metrics, alert rules, and a generated library baseline are in place; multi-user load and runtime deployment verification remain
 Phase 8+: 🚀  Planned
 ```
 
@@ -387,6 +397,6 @@ Remaining work is tracked by unchecked items above; implementation status does n
 
 ---
 
-Last Updated: November 17, 2026
+Last Updated: November 19, 2026
 Build: Typecheck, lint, and production build verified; deployment validation remains open
-Next Focus: Verify scan recovery/cancellation, then add durable upload processing and image thumbnails; complete security/performance testing
+Next Focus: Evaluate multi-user capacity, web vitals, and deployment-specific alerts against the generated performance baseline

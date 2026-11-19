@@ -34,8 +34,30 @@ export async function runLibraryScan(jobId: string, workerId: string) {
   );
   if (!claimedJob.rowCount) throw new Error("The scan worker no longer owns this job.");
 
+  const existingChapters = await pool.query<{ sourcePath: string; seriesPath: string; chapterNumber: number }>(
+    `SELECT chapter.source_path AS "sourcePath", series.source_path AS "seriesPath",
+            chapter.chapter_number AS "chapterNumber"
+     FROM chapters AS chapter
+     JOIN series ON series.id = chapter.series_id
+     WHERE series.directory_id = $1`,
+    [directoryId],
+  );
+  const existingChaptersByPath = new Map(existingChapters.rows.map((chapter) => [chapter.sourcePath, chapter]));
+  const reservedChapterNumbers = new Map<string, Set<number>>();
+  for (const archivePath of archives) {
+    const title = titleFromPath(root, archivePath);
+    const seriesPath = path.dirname(archivePath) === root ? archivePath : path.join(root, title);
+    const existing = existingChaptersByPath.get(archivePath);
+    if (existing?.seriesPath === seriesPath) {
+      const reserved = reservedChapterNumbers.get(seriesPath) ?? new Set<number>();
+      reserved.add(existing.chapterNumber);
+      reservedChapterNumbers.set(seriesPath, reserved);
+    }
+  }
+
   const errors: string[] = [];
   const chapterNumbers = new Map<string, Set<number>>();
+  const archivePaths = new Set(archives);
   const seriesCoverImages = new Map<string, string | null>();
   const scannedSeriesPaths = new Set<string>();
   let cancelled = claimedJob.rows[0].cancelRequested;
@@ -53,8 +75,11 @@ export async function runLibraryScan(jobId: string, workerId: string) {
       const coverImagePath = seriesCoverImages.get(seriesPath) ?? null;
       const chapterTitle = path.basename(archivePath, path.extname(archivePath));
       const usedNumbers = chapterNumbers.get(seriesPath) ?? new Set<number>();
-      let chapterNumber = numberFromName(chapterTitle, usedNumbers.size + 1);
-      while (usedNumbers.has(chapterNumber)) chapterNumber += 1;
+      const existing = existingChaptersByPath.get(archivePath);
+      const preserveNumber = existing?.seriesPath === seriesPath && !usedNumbers.has(existing.chapterNumber);
+      let chapterNumber = preserveNumber ? existing.chapterNumber : numberFromName(chapterTitle, usedNumbers.size + 1);
+      const reservedNumbers = reservedChapterNumbers.get(seriesPath);
+      while (usedNumbers.has(chapterNumber) || (!preserveNumber && reservedNumbers?.has(chapterNumber))) chapterNumber += 1;
       usedNumbers.add(chapterNumber);
       chapterNumbers.set(seriesPath, usedNumbers);
 
@@ -66,22 +91,50 @@ export async function runLibraryScan(jobId: string, workerId: string) {
            VALUES ($1, $2, $3, $4, $5)
            ON CONFLICT(source_path) DO UPDATE SET title = COALESCE(series.title_override, EXCLUDED.title), directory_id = EXCLUDED.directory_id,
              cover_path = EXCLUDED.cover_path,
-             cover_image_path = COALESCE(EXCLUDED.cover_image_path, series.cover_image_path),
+             cover_image_path = EXCLUDED.cover_image_path,
              updated_at = now()
            RETURNING id, custom_cover_path`,
           [title, seriesPath, directoryId, archivePath, coverImagePath],
         );
         const seriesId: string = seriesResult.rows[0].id;
         const legacyCoverPath = seriesResult.rows[0].custom_cover_path;
-        const chapterResult = await client.query(
-          `INSERT INTO chapters(series_id, chapter_number, title, source_path, page_count)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT(source_path) DO UPDATE SET series_id = EXCLUDED.series_id,
-             chapter_number = EXCLUDED.chapter_number, title = EXCLUDED.title, page_count = EXCLUDED.page_count
+        const chapterValues = [seriesId, chapterNumber, chapterTitle, archivePath, images.length];
+        const existingChapter = await client.query<{ id: string }>(
+          `UPDATE chapters
+           SET series_id = $1, chapter_number = $2, title = $3, source_path = $4, page_count = $5
+           WHERE source_path = $4
            RETURNING id`,
-          [seriesId, chapterNumber, chapterTitle, archivePath, images.length],
+          chapterValues,
         );
-        const chapterId: string = chapterResult.rows[0].id;
+        let chapterId = existingChapter.rows[0]?.id;
+        if (!chapterId) {
+          const chapterAtNumber = await client.query<{ id: string; source_path: string }>(
+            `SELECT id, source_path FROM chapters
+             WHERE series_id = $1 AND chapter_number = $2
+             FOR UPDATE`,
+            [seriesId, chapterNumber],
+          );
+          const staleChapter = chapterAtNumber.rows[0];
+          if (staleChapter && !archivePaths.has(staleChapter.source_path)) {
+            const renamedChapter = await client.query<{ id: string }>(
+              `UPDATE chapters
+               SET title = $2, source_path = $3, page_count = $4
+               WHERE id = $1
+               RETURNING id`,
+              [staleChapter.id, chapterTitle, archivePath, images.length],
+            );
+            chapterId = renamedChapter.rows[0]?.id;
+          }
+        }
+        if (!chapterId) {
+          const insertedChapter = await client.query<{ id: string }>(
+            `INSERT INTO chapters(series_id, chapter_number, title, source_path, page_count)
+             VALUES ($1, $2, $3, $4, $5)
+             RETURNING id`,
+            chapterValues,
+          );
+          chapterId = insertedChapter.rows[0].id;
+        }
         await client.query("DELETE FROM chapter_pages WHERE chapter_id = $1", [chapterId]);
         for (let offset = 0; offset < images.length; offset += 250) {
           const batch = images.slice(offset, offset + 250);
@@ -159,12 +212,30 @@ export async function runLibraryScan(jobId: string, workerId: string) {
     cancelled = finalState.rows[0].cancelRequested;
   }
   if (!cancelled && !errors.length) {
-    await pool.query(
-      `DELETE FROM series
-       WHERE directory_id = $1
-         AND NOT (source_path = ANY($2::text[]))`,
-      [directoryId, [...scannedSeriesPaths]],
-    );
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `DELETE FROM chapters AS chapter
+         USING series
+         WHERE chapter.series_id = series.id
+           AND series.directory_id = $1
+           AND NOT (chapter.source_path = ANY($2::text[]))`,
+        [directoryId, archives],
+      );
+      await client.query(
+        `DELETE FROM series
+         WHERE directory_id = $1
+           AND NOT (source_path = ANY($2::text[]))`,
+        [directoryId, [...scannedSeriesPaths]],
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
   await pool.query(
     `UPDATE library_directories SET status = 'active', last_scanned_at = now() WHERE id = $1`,

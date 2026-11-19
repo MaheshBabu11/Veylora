@@ -163,3 +163,7 @@ export function startLibraryScanWorker() {
   void workerLoop(workerId);
   console.info("[scanner] durable scan worker started", { workerId });
 }
+
+export function isLibraryScanWorkerStarted() {
+  return globalForWorker.veyloraScanWorkerStarted === true;
+}

@@ -121,8 +121,8 @@ scripts/               Migration and local reset scripts
 ## Current limitations
 
 - User registration is open, and there are no administrator roles, invitations, or password recovery.
-- The scan worker runs in the Next.js Node process. Queued work survives restarts; abandoned scans are reclaimed after a five-minute lease and retried up to three attempts with backoff. A retry restarts the scan from the beginning, and archive uploads themselves still run in the request.
+- The scan and upload workers run in the Next.js Node process. Queued work survives restarts; abandoned jobs are reclaimed after a five-minute lease and retried up to three attempts with backoff. Upload bytes are received and staged during the request, while archive validation, promotion, and indexing run asynchronously.
 - Offline changes, cross-device synchronization, and automated conflict resolution are not implemented.
-- Image thumbnail generation and production-scale performance/security validation remain outstanding.
+- Responsive reader image variants and production-scale performance/security validation remain outstanding.
 
-See [CHECKLIST.md](CHECKLIST.md) and [DELIVERY_PHASES.md](DELIVERY_PHASES.md) for implementation and remaining verification work. No license has been selected for this repository yet.
+See [docs/operations.md](docs/operations.md) for deployment, monitoring, backup, restore, and troubleshooting guidance, and [CHECKLIST.md](CHECKLIST.md) and [DELIVERY_PHASES.md](DELIVERY_PHASES.md) for implementation and remaining verification work. No license has been selected for this repository yet.

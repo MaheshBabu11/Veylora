@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { ArrowUpRight, Library, Plus, Upload, X } from "lucide-react";
 import { uploadBookArchives, type BookUploadResult } from "@/services/import";
-import { useSeriesList } from "@/services/library";
+import { fetchJson, useSeriesList } from "@/services/library";
 import type { ImportSeriesTarget } from "@/components/import-series-context";
 
 type Props = {
@@ -36,7 +36,12 @@ export function ImportDialog({ scanning, initialSeries, onClose, onScanLibrary, 
   const [chapterNumbers, setChapterNumbers] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadJobId, setUploadJobId] = useState<string | null>(null);
+  const [jobProgress, setJobProgress] = useState({ progress: 0, total: 0 });
+  const [jobStatus, setJobStatus] = useState("queued");
+  const [cancelRequested, setCancelRequested] = useState(false);
   const [error, setError] = useState("");
+  const uploadController = useRef<AbortController | null>(null);
   const { data: library, isLoading: loadingSeries, error: seriesError } = useSeriesList({ limit: 500, sort: "title", enabled: !initialSeries });
   const existingSeries = library?.items ?? [];
 
@@ -64,6 +69,12 @@ export function ImportDialog({ scanning, initialSeries, onClose, onScanLibrary, 
     setError("");
     setUploading(true);
     setUploadProgress(0);
+    setUploadJobId(null);
+    setJobProgress({ progress: 0, total: 0 });
+    setJobStatus("queued");
+    setCancelRequested(false);
+    const controller = new AbortController();
+    uploadController.current = controller;
     try {
       const chapters = files.map((file, index) => ({
         file,
@@ -73,12 +84,30 @@ export function ImportDialog({ scanning, initialSeries, onClose, onScanLibrary, 
         ...(seriesMode === "existing" ? { seriesId } : { seriesTitle }),
         chapters,
         ...(seriesMode === "new" ? { authorName, description, genres } : {}),
-      }, setUploadProgress);
+      }, setUploadProgress, setUploadJobId, (progress, total, status) => {
+        setJobProgress({ progress, total });
+        setJobStatus(status);
+      }, controller.signal);
       await onImportComplete(result);
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "The archives could not be uploaded.");
     } finally {
+      uploadController.current = null;
       setUploading(false);
+    }
+  };
+
+  const cancelUpload = async () => {
+    if (!uploadJobId) {
+      uploadController.current?.abort();
+      return;
+    }
+    setCancelRequested(true);
+    try {
+      await fetchJson(`/api/library/uploads/${uploadJobId}/cancel`, { method: "POST", body: "{}" });
+    } catch (cancelError) {
+      setCancelRequested(false);
+      setError(cancelError instanceof Error ? cancelError.message : "Could not cancel this upload.");
     }
   };
 
@@ -151,7 +180,18 @@ export function ImportDialog({ scanning, initialSeries, onClose, onScanLibrary, 
             </label>
           </details>}
 
-          {uploading && <div className="upload-progress"><div><span role="status">{uploadProgress === 100 ? "Files sent · saving chapters…" : "Uploading chapter archives…"}</span><strong>{uploadProgress}%</strong></div><progress aria-label="Archive upload progress" max="100" value={uploadProgress} /></div>}
+          {uploading && <div className="upload-progress">
+            <div>
+              <span role="status">{uploadJobId
+                ? cancelRequested ? "Cancellation requested…" : jobStatus === "queued" ? "Upload queued…" : `Processing archives · ${jobProgress.progress}/${jobProgress.total}`
+                : "Uploading chapter archives…"}</span>
+              <strong>{uploadJobId ? `${jobProgress.total ? Math.round(jobProgress.progress / jobProgress.total * 100) : 0}%` : `${uploadProgress}%`}</strong>
+            </div>
+            <progress aria-label={uploadJobId ? "Archive processing progress" : "Archive upload progress"} max="100" value={uploadJobId && jobProgress.total ? Math.round(jobProgress.progress / jobProgress.total * 100) : uploadProgress} />
+            <button type="button" className="upload-cancel" onClick={() => void cancelUpload()} disabled={cancelRequested}>
+              {cancelRequested ? "Cancelling…" : "Cancel upload"}
+            </button>
+          </div>}
           {error && <p className="import-upload-error" role="alert">{error}</p>}
           <button className="import-upload-submit" type="submit" disabled={uploading || scanning || files.length === 0 || (seriesMode === "existing" && !seriesId)}>
             <Upload size={15} />{uploading ? "Uploading…" : scanning ? "Library scan in progress…" : files.length ? `Upload ${files.length} chapter${files.length === 1 ? "" : "s"}` : "Upload chapters"}

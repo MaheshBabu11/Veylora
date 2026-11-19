@@ -4,13 +4,19 @@ import { mkdtemp, readFile, readdir, rename, rm, stat, unlink, writeFile } from 
 import path from "node:path";
 import { promisify } from "node:util";
 import { createExtractorFromFile } from "node-unrar-js";
+import sharp from "sharp";
 import { getCacheRoot, resolveBooksFile } from "./filesystem";
 
 const execFile = promisify(execFileCallback);
 const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif"]);
 const MAX_ARCHIVE_LIST_BYTES = 16 * 1024 * 1024;
+const MAX_ARCHIVE_ENTRIES = 100_000;
+const MAX_ARCHIVE_EXPANDED_BYTES = 20 * 1024 ** 3;
 const MAX_PAGE_BYTES = 32 * 1024 * 1024;
 const CACHE_LIMIT_BYTES = 4 * 1024 * 1024 * 1024;
+export const ARCHIVE_IMAGE_WIDTHS = [640, 960, 1280, 1920] as const;
+export type ArchiveImageWidth = typeof ARCHIVE_IMAGE_WIDTHS[number];
+const variantOperations = new Map<string, Promise<Buffer>>();
 
 export type ArchiveImage = { entry: string; contentType: string };
 
@@ -39,6 +45,26 @@ function contentTypeFor(entry: string) {
   }
 }
 
+async function validateZipArchive(safePath: string) {
+  const { stdout } = await execFile("unzip", ["-Z", "-v", safePath], {
+    timeout: 30_000,
+    maxBuffer: MAX_ARCHIVE_LIST_BYTES,
+  });
+  const entries = stdout.match(/Central directory entry #\d+:/g) ?? [];
+  if (entries.length > MAX_ARCHIVE_ENTRIES) throw new Error("The ZIP archive contains too many entries.");
+  const sizes = [...stdout.matchAll(/uncompressed size:\s*(\d+)\s+bytes/gi)];
+  if (sizes.length !== entries.length) throw new Error("The ZIP archive entry sizes could not be validated.");
+  let expandedBytes = 0;
+  for (const [, value] of sizes) {
+    const size = Number(value);
+    if (!Number.isSafeInteger(size) || size < 0) throw new Error("The ZIP archive contains an invalid entry size.");
+    expandedBytes += size;
+    if (expandedBytes > MAX_ARCHIVE_EXPANDED_BYTES) {
+      throw new Error("The ZIP archive expands beyond the 20 GiB limit.");
+    }
+  }
+}
+
 export async function listArchiveImages(archivePath: string): Promise<ArchiveImage[]> {
   const safePath = await resolveBooksFile(archivePath);
   if (/\.cbr$/i.test(safePath)) {
@@ -47,15 +73,23 @@ export async function listArchiveImages(archivePath: string): Promise<ArchiveIma
       const { arcHeader, fileHeaders } = extractor.getFileList();
       const images: ArchiveImage[] = [];
       let entryCount = 0;
+      let expandedBytes = 0;
       for (const header of fileHeaders) {
         entryCount += 1;
-        if (entryCount > 100_000) continue;
+        if (entryCount > MAX_ARCHIVE_ENTRIES) throw new Error("The RAR archive contains too many entries.");
+        const expandedSize = Number(header.unpSize);
+        if (!Number.isSafeInteger(expandedSize) || expandedSize < 0) {
+          throw new Error("The RAR archive contains an invalid entry size.");
+        }
+        expandedBytes += expandedSize;
+        if (expandedBytes > MAX_ARCHIVE_EXPANDED_BYTES) {
+          throw new Error("The RAR archive expands beyond the 20 GiB limit.");
+        }
         if (header.flags.directory || header.flags.encrypted || !safeArchiveEntry(header.name)) continue;
         if (IMAGE_EXTENSIONS.has(path.posix.extname(header.name.replaceAll("\\", "/")).toLowerCase())) {
           images.push({ entry: header.name, contentType: contentTypeFor(header.name) });
         }
       }
-      if (entryCount > 100_000) throw new Error("The RAR archive contains too many entries.");
       if (arcHeader.flags.volume) throw new Error("Multi-volume RAR archives are not supported.");
       return images.sort((left, right) => left.entry.localeCompare(right.entry, undefined, { numeric: true }));
     });
@@ -63,8 +97,11 @@ export async function listArchiveImages(archivePath: string): Promise<ArchiveIma
   if (!/\.(cbz|zip)$/i.test(safePath)) {
     throw new Error("Only CBZ, ZIP, and CBR archives are supported.");
   }
+  await validateZipArchive(safePath);
   const { stdout } = await execFile("unzip", ["-Z1", safePath], { timeout: 30_000, maxBuffer: MAX_ARCHIVE_LIST_BYTES });
-  return stdout.split(/\r?\n/)
+  const entries = stdout.split(/\r?\n/).filter(Boolean);
+  if (entries.length > MAX_ARCHIVE_ENTRIES) throw new Error("The ZIP archive contains too many entries.");
+  return entries
     .filter((entry) => safeArchiveEntry(entry) && IMAGE_EXTENSIONS.has(path.posix.extname(entry).toLowerCase()))
     .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }))
     .map((entry) => ({ entry, contentType: contentTypeFor(entry) }));
@@ -127,7 +164,31 @@ async function pruneCache(root: string) {
   }
 }
 
-export async function readArchiveImage(archivePath: string, entry: string) {
+async function readOrCreateCachedImage(cacheRoot: string, key: string, create: () => Promise<Buffer>) {
+  const cachedPath = path.join(cacheRoot, `${key}.page`);
+  try {
+    return await readFile(cachedPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+
+  const data = await create();
+  if (data.byteLength > MAX_PAGE_BYTES) throw new Error("The requested archive image exceeds the 32 MiB page limit.");
+  const temporary = path.join(cacheRoot, `${key}.${randomUUID()}.tmp`);
+  try {
+    await writeFile(temporary, data, { flag: "wx", mode: 0o600 });
+    await rename(temporary, cachedPath);
+  } catch (error) {
+    await unlink(temporary).catch((cleanupError: unknown) => {
+      if ((cleanupError as NodeJS.ErrnoException).code !== "ENOENT") throw cleanupError;
+    });
+    throw error;
+  }
+  await pruneCache(cacheRoot);
+  return data;
+}
+
+export async function readArchiveImage(archivePath: string, entry: string, width?: ArchiveImageWidth) {
   if (!safeArchiveEntry(entry) || !IMAGE_EXTENSIONS.has(path.posix.extname(entry).toLowerCase())) {
     throw new Error("The requested archive entry is not a supported image.");
   }
@@ -137,28 +198,27 @@ export async function readArchiveImage(archivePath: string, entry: string) {
   const key = createHash("sha256")
     .update(`${safePath}\0${archiveStat.size}\0${archiveStat.mtimeMs}\0${entry}`)
     .digest("hex");
-  const cachedPath = path.join(cacheRoot, `${key}.page`);
-  try {
-    return await readFile(cachedPath);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
-
-  const data = /\.cbr$/i.test(safePath)
-    ? await readRarImage(safePath, entry)
+  const original = await readOrCreateCachedImage(cacheRoot, key, async () => /\.cbr$/i.test(safePath)
+    ? readRarImage(safePath, entry)
     : (await execFile("unzip", ["-p", safePath, entry], {
       encoding: "buffer",
       timeout: 30_000,
       maxBuffer: MAX_PAGE_BYTES,
-    })).stdout;
-  const temporary = path.join(cacheRoot, `${key}.${randomUUID()}.tmp`);
+    })).stdout);
+
+  if (width === undefined || path.posix.extname(entry).toLowerCase() === ".gif") return original;
+  const variantKey = createHash("sha256").update(`${key}\0webp\0${width}`).digest("hex");
+  const existingOperation = variantOperations.get(variantKey);
+  if (existingOperation) return existingOperation;
+
+  const operation = readOrCreateCachedImage(cacheRoot, variantKey, async () => sharp(original, {
+    limitInputPixels: 100_000_000,
+    sequentialRead: true,
+  }).resize({ width, fit: "inside", withoutEnlargement: true }).webp({ quality: 82, effort: 4 }).toBuffer());
+  variantOperations.set(variantKey, operation);
   try {
-    await writeFile(temporary, data, { flag: "wx", mode: 0o600 });
-    await rename(temporary, cachedPath);
-  } catch (error) {
-    await unlink(temporary).catch(() => undefined);
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    return await operation;
+  } finally {
+    if (variantOperations.get(variantKey) === operation) variantOperations.delete(variantKey);
   }
-  await pruneCache(cacheRoot);
-  return data;
 }

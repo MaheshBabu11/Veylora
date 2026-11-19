@@ -10,7 +10,7 @@ import { FilterDropdown } from "@/components/filter-dropdown";
 import { SeriesCard } from "@/components/series-card";
 import { useOpenImportDialog } from "@/components/import-series-context";
 import type { Series, ReadingStatus } from "@/types/library";
-import { fetchJson, useGenres, useSeriesList } from "@/services/library";
+import { fetchJson, useGenres, useInfiniteSeriesList } from "@/services/library";
 import { usePreferencesStore } from "@/stores/preferences";
 
 const statuses = ["All statuses", "Reading", "Plan to read", "Completed", "On hold"];
@@ -30,7 +30,6 @@ export function LibraryView({ collectionId }: { collectionId?: string }) {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const view = usePreferencesStore((state) => state.defaultView);
   const setView = usePreferencesStore((state) => state.setDefaultView);
-  const [limit, setLimit] = useState(100);
   const viewportColumns = useSyncExternalStore(subscribeToViewport, getViewportColumns, () => 4);
   const columns = view === "grid" ? viewportColumns : 1;
   const [selected, setSelected] = useState<string[]>([]);
@@ -44,14 +43,27 @@ export function LibraryView({ collectionId }: { collectionId?: string }) {
   });
   const activeCollection = collections.find((collection) => collection.id === selectedCollectionId);
   const { data: genreDefinitions = [], error: genresError } = useGenres();
-  const { data, isLoading, error } = useSeriesList({
+  const sortKey = sort === "Last read" ? "last-read"
+    : sort === "Title A–Z" ? "title"
+      : sort === "Most chapters" ? "chapters"
+        : sort === "Reading progress" ? "progress"
+          : "recent";
+  const {
+    data: pages,
+    isLoading,
+    error,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useInfiniteSeriesList({
     query,
     genre,
     status,
-    limit,
     collectionId: selectedCollectionId || undefined,
-    sort: sort === "Last read" ? "last-read" : undefined,
+    sort: sortKey,
   });
+  const data = pages?.pages[0];
+  const filtered = useMemo(() => pages?.pages.flatMap((page) => page.items) ?? [], [pages?.pages]);
   const genres = ["All genres", ...genreDefinitions.map((definition) => definition.name)];
   const collectionOptions = ["All collections", ...collections.map((collection) => collection.name)];
   const collectionFilterValue = activeCollection?.name ?? "All collections";
@@ -63,14 +75,6 @@ export function LibraryView({ collectionId }: { collectionId?: string }) {
     if (requestedGenre) setGenre(requestedGenre);
     setSelectedCollectionId(collectionId ?? "");
   }, [collectionId]);
-  const filtered = useMemo(() => {
-    const result = [...(data?.items ?? [])];
-    if (sort === "Title A–Z") result.sort((a, b) => a.title.localeCompare(b.title));
-    if (sort === "Most chapters") result.sort((a, b) => b.chapters - a.chapters);
-    if (sort === "Reading progress") result.sort((a, b) => b.readChapters / Math.max(b.chapters, 1) - a.readChapters / Math.max(a.chapters, 1));
-    return result;
-  }, [data?.items, sort]);
-
   const rows = useMemo(() => {
     const items: Series[][] = [];
     for (let i = 0; i < filtered.length; i += columns) items.push(filtered.slice(i, i + columns));
@@ -128,7 +132,7 @@ export function LibraryView({ collectionId }: { collectionId?: string }) {
           <h1>{activeCollection?.name ?? "My library"}<span className="heading-period">.</span></h1>
           <p className="page-subtitle">{activeCollection ? "Stories gathered on this shelf." : "Your books, kept right where they belong."}</p>
         </div>
-        <button className="button button-subtle" onClick={() => setSelected(filtered.map((item) => item.id))}><Check size={15} /> Select titles</button>
+        <button className="button button-subtle" onClick={() => setSelected(filtered.map((item) => item.id))}><Check size={15} /> Select loaded titles</button>
       </div>
 
       <div className="library-toolbar">
@@ -218,7 +222,7 @@ export function LibraryView({ collectionId }: { collectionId?: string }) {
           </div>
         </div>
       ) : null}
-      {data && data.total > limit && <button className="load-chapters" onClick={() => setLimit((value) => value + 100)}>Load more titles</button>}
+      {hasNextPage && <button className="load-chapters" onClick={() => void fetchNextPage()} disabled={isFetchingNextPage}>{isFetchingNextPage ? "Loading titles…" : "Load more titles"}</button>}
       <div className="library-bottom-note">Your shelves are looking good <span>✦</span> <Link href="/settings">Personalize your library →</Link></div>
     </div>
   );

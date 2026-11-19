@@ -37,6 +37,13 @@ export const userSessions = pgTable("user_sessions", {
   createdAt: createdAt(),
 }, (table) => [index("user_sessions_user_idx").on(table.userId), index("user_sessions_expiry_idx").on(table.expiresAt)]);
 
+export const authRateLimits = pgTable("auth_rate_limits", {
+  subjectHash: text("subject_hash").primaryKey(),
+  windowStartedAt: timestamp("window_started_at", { withTimezone: true }).notNull().defaultNow(),
+  hitCount: integer("hit_count").notNull(),
+  updatedAt: updatedAt(),
+}, (table) => [index("auth_rate_limits_window_idx").on(table.windowStartedAt)]);
+
 export const librarySettings = pgTable("library_settings", {
   singleton: boolean("singleton").primaryKey().default(true),
   autoScan: boolean("auto_scan").notNull().default(true),
@@ -189,4 +196,27 @@ export const scanJobs = pgTable("scan_jobs", {
 }, (table) => [
   index("scan_jobs_status_idx").on(table.status, table.createdAt),
   index("scan_jobs_claim_idx").on(table.status, table.availableAt, table.createdAt),
+]);
+
+export const uploadJobs = pgTable("upload_jobs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  status: varchar("status", { length: 24 }).notNull().default("queued"),
+  progress: integer("progress").notNull().default(0),
+  total: integer("total").notNull(),
+  payload: jsonb("payload").notNull(),
+  error: text("error"),
+  attempts: integer("attempts").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(3),
+  availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
+  workerId: text("worker_id"),
+  lockedAt: timestamp("locked_at", { withTimezone: true }),
+  cancelRequested: boolean("cancel_requested").notNull().default(false),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (table) => [
+  index("upload_jobs_claim_idx").on(table.status, table.availableAt, table.createdAt),
+  index("upload_jobs_user_history_idx").on(table.userId, table.createdAt),
 ]);

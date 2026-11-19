@@ -11,3 +11,4 @@ coverage/
 .DS_Store
 storage/cache/
 storage/tmp/
+backups/

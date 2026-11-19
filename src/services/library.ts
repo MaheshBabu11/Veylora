@@ -1,9 +1,23 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import type { Series } from "@/types/library";
 
 export type SeriesListResult = { items: Series[]; total: number; limit: number; offset: number };
+export type SeriesListOptions = {
+  query?: string;
+  status?: string;
+  genre?: string;
+  featured?: boolean;
+  collectionId?: string;
+  favorite?: boolean;
+  inProgress?: boolean;
+  hasHistory?: boolean;
+  sort?: string;
+  limit?: number;
+  offset?: number;
+  enabled?: boolean;
+};
 export type GenreDefinition = { id: string; name: string; slug: string; seriesCount: number };
 export type Chapter = {
   id: string;
@@ -31,21 +45,42 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function useSeriesList(options: { query?: string; status?: string; genre?: string; featured?: boolean; collectionId?: string; sort?: string; limit?: number; offset?: number; enabled?: boolean } = {}) {
+function seriesListUrl(options: SeriesListOptions, limit: number, offset: number) {
   const params = new URLSearchParams();
   if (options.query?.trim()) params.set("q", options.query.trim());
   if (options.status && options.status !== "All statuses") params.set("status", options.status);
   if (options.genre && options.genre !== "All genres") params.set("genre", options.genre);
   if (options.featured !== undefined) params.set("featured", String(options.featured));
   if (options.collectionId) params.set("collectionId", options.collectionId);
+  if (options.favorite !== undefined) params.set("favorite", String(options.favorite));
+  if (options.inProgress !== undefined) params.set("inProgress", String(options.inProgress));
+  if (options.hasHistory !== undefined) params.set("hasHistory", String(options.hasHistory));
   if (options.sort) params.set("sort", options.sort);
-  params.set("limit", String(options.limit ?? 100));
-  params.set("offset", String(options.offset ?? 0));
-  const suffix = params.toString();
+  params.set("limit", String(limit));
+  params.set("offset", String(offset));
+  return `/api/series?${params.toString()}`;
+}
+
+export function useSeriesList(options: SeriesListOptions = {}) {
+  const url = seriesListUrl(options, options.limit ?? 100, options.offset ?? 0);
   return useQuery({
     queryKey: ["series", options],
-    queryFn: () => fetchJson<SeriesListResult>(`/api/series?${suffix}`),
+    queryFn: () => fetchJson<SeriesListResult>(url),
     enabled: options.enabled ?? true,
+  });
+}
+
+export function useInfiniteSeriesList(options: Omit<SeriesListOptions, "limit" | "offset"> = {}) {
+  const { enabled = true, ...filters } = options;
+  return useInfiniteQuery({
+    queryKey: ["series", "infinite", filters],
+    queryFn: ({ pageParam }) => fetchJson<SeriesListResult>(seriesListUrl(filters, 50, pageParam)),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => {
+      const nextOffset = lastPage.offset + lastPage.items.length;
+      return nextOffset < lastPage.total ? nextOffset : undefined;
+    },
+    enabled,
   });
 }
 

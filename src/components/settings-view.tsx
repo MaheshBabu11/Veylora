@@ -19,7 +19,21 @@ type ScanJob = {
   cancel_requested: boolean;
   created_at: string;
 };
+type UploadJob = {
+  id: string;
+  status: string;
+  progress: number;
+  total: number;
+  error: string | null;
+  attempts: number;
+  max_attempts: number;
+  cancel_requested: boolean;
+  created_at: string;
+  series_title: string;
+  chapter_count: number;
+};
 const EMPTY_SCAN_JOBS: ScanJob[] = [];
+const EMPTY_UPLOAD_JOBS: UploadJob[] = [];
 const settingsSections = [
   { id: "library-settings", label: "Library", icon: Library },
   { id: "reader-settings", label: "Reader", icon: TabletSmartphone },
@@ -147,6 +161,7 @@ export function SettingsView() {
   const [activeSection, setActiveSection] = useState(settingsSections[0].id);
   const queryClient = useQueryClient();
   const previousScanStatuses = useRef(new Map<string, string>());
+  const previousUploadStatuses = useRef(new Map<string, string>());
   const { data: directories = [] } = useQuery({ queryKey: ["directories"], queryFn: () => fetchJson<Directory[]>("/api/library/directories") });
   const { data: storage } = useQuery({ queryKey: ["storage"], queryFn: () => fetchJson<StorageStats>("/api/storage") });
   const { data: scanHistory } = useQuery({
@@ -154,7 +169,13 @@ export function SettingsView() {
     queryFn: () => fetchJson<{ items: ScanJob[] }>("/api/library/scan/history"),
     refetchInterval: 5_000,
   });
+  const { data: uploadHistory } = useQuery({
+    queryKey: ["upload-history"],
+    queryFn: () => fetchJson<{ items: UploadJob[] }>("/api/library/uploads"),
+    refetchInterval: 5_000,
+  });
   const scanJobs = scanHistory?.items ?? EMPTY_SCAN_JOBS;
+  const uploadJobs = uploadHistory?.items ?? EMPTY_UPLOAD_JOBS;
   const theme = usePreferencesStore((state) => state.theme);
   const setTheme = usePreferencesStore((state) => state.setTheme);
   const readerMode = usePreferencesStore((state) => state.readerMode);
@@ -183,6 +204,26 @@ export function SettingsView() {
       ]);
     }
   }, [queryClient, scanJobs]);
+
+  useEffect(() => {
+    let completedJob = false;
+    for (const job of uploadJobs) {
+      const previousStatus = previousUploadStatuses.current.get(job.id);
+      if (["queued", "running"].includes(previousStatus ?? "") &&
+          ["completed", "failed", "cancelled"].includes(job.status)) {
+        completedJob = true;
+      }
+      previousUploadStatuses.current.set(job.id, job.status);
+    }
+    if (completedJob) {
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["storage"] }),
+        queryClient.invalidateQueries({ queryKey: ["series"] }),
+        queryClient.invalidateQueries({ queryKey: ["chapters"] }),
+        queryClient.invalidateQueries({ queryKey: ["scan-history"] }),
+      ]);
+    }
+  }, [queryClient, uploadJobs]);
 
   useEffect(() => {
     const sections = settingsSections
@@ -217,6 +258,16 @@ export function SettingsView() {
       await queryClient.invalidateQueries({ queryKey: ["scan-history"] });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : `Could not ${action} the scan.`);
+    }
+  };
+
+  const updateUploadJob = async (jobId: string, action: "cancel" | "retry") => {
+    try {
+      await fetchJson(`/api/library/uploads/${jobId}/${action}`, { method: "POST", body: "{}" });
+      setMessage(action === "cancel" ? "Upload cancellation requested." : "Upload queued for retry.");
+      await queryClient.invalidateQueries({ queryKey: ["upload-history"] });
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : `Could not ${action} the upload.`);
     }
   };
 
@@ -261,6 +312,16 @@ export function SettingsView() {
                 <span><strong>{job.cancel_requested ? "Cancelling scan…" : job.status === "running" ? `Scanning ${job.progress}/${job.total} archives` : job.status === "queued" ? "Scan queued" : `Scan ${job.status.replaceAll("_", " ")}`}</strong><small>{new Date(job.created_at).toLocaleString()}{active ? ` · attempt ${job.attempts}/${job.max_attempts}` : ""}</small>{job.error && <small className="scan-job-error">{job.error}</small>}</span>
                 {active && !job.cancel_requested && <button type="button" aria-label="Cancel scan" title="Cancel scan" onClick={() => void updateScanJob(job.id, "cancel")}><X size={15} /></button>}
                 {canRetry && <button type="button" aria-label="Retry scan" title="Retry scan" onClick={() => void updateScanJob(job.id, "retry")}><RotateCcw size={15} /></button>}
+              </div>;
+            })}
+          </div>}
+          {uploadJobs.length > 0 && <div className="scan-job-list" aria-label="Recent archive uploads">
+            {uploadJobs.slice(0, 5).map((job) => {
+              const active = job.status === "queued" || job.status === "running";
+              return <div className="scan-job-row" key={job.id}>
+                <span><strong>{job.cancel_requested ? "Cancelling upload…" : job.status === "running" ? `Processing ${job.series_title} · ${job.progress}/${job.total}` : job.status === "queued" ? `Upload queued · ${job.series_title}` : `Upload ${job.status} · ${job.series_title}`}</strong><small>{new Date(job.created_at).toLocaleString()}{active ? ` · attempt ${job.attempts}/${job.max_attempts}` : ` · ${job.chapter_count} chapter(s)`}</small>{job.error && <small className="scan-job-error">{job.error}</small>}</span>
+                {active && !job.cancel_requested && <button type="button" aria-label="Cancel upload" title="Cancel upload" onClick={() => void updateUploadJob(job.id, "cancel")}><X size={15} /></button>}
+                {job.status === "failed" && <button type="button" aria-label="Retry upload" title="Retry upload" onClick={() => void updateUploadJob(job.id, "retry")}><RotateCcw size={15} /></button>}
               </div>;
             })}
           </div>}

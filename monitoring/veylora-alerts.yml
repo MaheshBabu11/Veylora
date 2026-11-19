@@ -1,0 +1,65 @@
+groups:
+  - name: veylora
+    rules:
+      - alert: VeyloraProcessDown
+        expr: up{job="veylora"} == 0 or absent(up{job="veylora"})
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Veylora is unavailable
+          description: Prometheus has not been able to scrape the Veylora process for one minute.
+
+      - alert: VeyloraDatabaseUnavailable
+        expr: veylora_database_available == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Veylora cannot reach PostgreSQL
+          description: Check PostgreSQL availability and the application's DATABASE_URL.
+
+      - alert: VeyloraBooksDirectoryUnavailable
+        expr: veylora_books_directory_available == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Veylora cannot access its books directory
+          description: Check VEYLORA_BOOKS_DIR and the application service account's filesystem permissions.
+
+      - alert: VeyloraWorkerNotStarted
+        expr: veylora_worker_started{worker=~"scan|upload|filesystem_watcher"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: A Veylora background worker has not started
+          description: Check the Node process instrumentation and service logs.
+
+      - alert: VeyloraJobMetricsUnavailable
+        expr: veylora_job_metrics_available == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Veylora job queue metrics are unavailable
+          description: Check the database schema and application logs.
+
+      - alert: VeyloraJobsQueuedTooLong
+        expr: veylora_queue_oldest_queued_seconds > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Veylora jobs are waiting in a queue
+          description: Inspect the scan or upload worker logs and job history in Settings.
+
+      - alert: VeyloraBooksDiskLow
+        expr: veylora_books_storage_available_bytes < 5368709120
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Less than 5 GiB remains on the books filesystem
+          description: Free disk space before uploads or archive processing are affected.

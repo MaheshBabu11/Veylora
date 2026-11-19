@@ -3,6 +3,7 @@ import type { PoolClient } from "pg";
 import { pool } from "@/server/db";
 import { createAccount, createSession, hashPassword, sessionCookie } from "@/server/auth";
 import { apiError, HttpError, readJson } from "@/server/http";
+import { enforceRateLimit } from "@/server/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +18,7 @@ export async function POST(request: Request) {
   let transactionOpen = false;
   try {
     const credentials = credentialsSchema.parse(await readJson(request));
+    await enforceRateLimit("registration", "instance", 20, 60 * 60);
     const passwordHash = await hashPassword(credentials.password);
     client = await pool.connect();
     await client.query("BEGIN");

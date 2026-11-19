@@ -2,28 +2,40 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowLeft, ArrowRight, BookOpen, ChevronLeft, ChevronRight, Maximize, Minus, Plus, Settings2, X } from "lucide-react";
 import { usePreferencesStore } from "@/stores/preferences";
 import { fetchJson, useChapter, useChapterPages, useChapters } from "@/services/library";
 
-function ReaderStackPage({ url, alt, pageNumber, zoom }: { url: string; alt: string; pageNumber: number; zoom: number }) {
+const RESPONSIVE_IMAGE_WIDTHS = [640, 960, 1280, 1920] as const;
+
+function readerImageSrcSet(url: string) {
+  const separator = url.includes("?") ? "&" : "?";
+  return RESPONSIVE_IMAGE_WIDTHS.map((width) => `${url}${separator}width=${width} ${width}w`).join(", ");
+}
+
+function ReaderStackPage({ url, alt, pageNumber, zoom, pageWidth }: { url: string; alt: string; pageNumber: number; zoom: number; pageWidth: number }) {
   const [aspectRatio, setAspectRatio] = useState<number | null>(null);
+  const sizes = `${pageWidth}vw`;
 
   return <div className="reader-page" data-reader-page={pageNumber} style={aspectRatio ? { aspectRatio } : undefined}>
-    <Image
-      src={url}
-      alt={alt}
-      fill
-      unoptimized
-      sizes="100vw"
-      onLoad={(event) => {
-        const { naturalWidth, naturalHeight } = event.currentTarget;
-        if (naturalWidth && naturalHeight) setAspectRatio(naturalWidth / naturalHeight);
-      }}
-      style={{ objectFit: "contain", transform: `scale(${zoom / 100})` }}
-    />
+    <picture className="reader-image-picture">
+      <source srcSet={readerImageSrcSet(url)} sizes={sizes} />
+      <Image
+        src={url}
+        alt={alt}
+        fill
+        unoptimized
+        sizes={sizes}
+        onLoad={(event) => {
+          const { naturalWidth, naturalHeight } = event.currentTarget;
+          if (naturalWidth && naturalHeight) setAspectRatio(naturalWidth / naturalHeight);
+        }}
+        style={{ objectFit: "contain", transform: `scale(${zoom / 100})` }}
+      />
+    </picture>
     <span className="reader-page-number">{String(pageNumber).padStart(2, "0")}</span>
   </div>;
 }
@@ -57,6 +69,19 @@ export function ReaderView({ chapterId }: { chapterId: string }) {
   const previousChapter = chapterIndex > 0 ? chapters[chapterIndex - 1] : undefined;
   const nextChapter = chapterIndex >= 0 ? chapters[chapterIndex + 1] : undefined;
   const pageByNumber = useMemo(() => new Map(pages.map((item) => [item.pageNumber, item.url])), [pages]);
+  // TanStack Virtual exposes a mutable instance that React Compiler cannot safely memoize.
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const verticalVirtualizer = useVirtualizer({
+    count: pages.length + 1,
+    getScrollElement: () => readerScrollRef.current,
+    estimateSize: (index) => {
+      if (index === pages.length) return 300;
+      const scrollWidth = readerScrollRef.current?.clientWidth ?? 800;
+      return Math.max(320, (scrollWidth - 32) * (pageWidth / 100) / 0.7);
+    },
+    getItemKey: (index) => pages[index]?.pageNumber ?? "chapter-end",
+    overscan: 2,
+  });
 
   const setPage = useCallback((value: number | ((current: number) => number)) => {
     setPageOverride((currentOverride) => {
@@ -70,19 +95,12 @@ export function ReaderView({ chapterId }: { chapterId: string }) {
     else if (readerRef.current?.requestFullscreen) void readerRef.current.requestFullscreen();
   }, []);
   const scrollToReaderPage = useCallback((targetPage: number) => {
-    const container = readerScrollRef.current;
-    const target = container?.querySelector<HTMLElement>(`[data-reader-page="${targetPage}"]`);
-    if (!container || !target) return false;
+    const pageIndex = pages.findIndex((item) => item.pageNumber === targetPage);
+    if (!readerScrollRef.current || pageIndex < 0) return false;
 
-    const topbarHeight = readerRef.current?.querySelector(".reader-topbar")?.getBoundingClientRect().height ?? 0;
-    const containerTop = container.getBoundingClientRect().top;
-    const targetTop = target.getBoundingClientRect().top;
-    container.scrollTo({
-      top: container.scrollTop + targetTop - containerTop - topbarHeight,
-      behavior: "smooth",
-    });
+    verticalVirtualizer.scrollToIndex(pageIndex, { align: "start", behavior: "smooth" });
     return true;
-  }, []);
+  }, [pages, verticalVirtualizer]);
 
   useEffect(() => {
     if (mode !== "vertical" || !chapter || pages.length === 0 || hasRestoredProgress.current) return;
@@ -159,15 +177,30 @@ export function ReaderView({ chapterId }: { chapterId: string }) {
           .find((pageElement) => pageElement.getBoundingClientRect().bottom > readerTop);
         if (currentPage) setPage(Number(currentPage.dataset.readerPage));
       }}>
-        <div className="reader-page-stack" style={{ width: `${pageWidth}%` }}>
-          {pages.map((item) => <ReaderStackPage
-            key={item.pageNumber}
-            url={item.url}
-            alt={`${chapter.series.title}, ${chapter.title}, page ${item.pageNumber}`}
-            pageNumber={item.pageNumber}
-            zoom={zoom}
-          />)}
-          <div className="reader-chapter-end"><span>END OF {chapter.title.toUpperCase()}</span><h2>One more, or a little rest?</h2><p>You’re {Math.round(chapter.chapter_number / Math.max(chapter.series.chapters, 1) * 100)}% through {chapter.series.title}.</p>{nextChapter && <Link href={`/reader/${nextChapter.id}`} className="button button-primary">Next chapter <ArrowRight size={15} /></Link>}</div>
+        <div className="reader-page-stack" style={{ width: `${pageWidth}%`, height: verticalVirtualizer.getTotalSize(), position: "relative" }}>
+          {verticalVirtualizer.getVirtualItems().map((virtualItem) => <div
+            key={virtualItem.key}
+            data-index={virtualItem.index}
+            ref={verticalVirtualizer.measureElement}
+            style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${virtualItem.start}px)` }}
+          >
+            {virtualItem.index === pages.length ? (
+              <div className="reader-chapter-end">
+                <span>END OF {chapter.title.toUpperCase()}</span>
+                <h2>One more, or a little rest?</h2>
+                <p>You’re {Math.round(chapter.chapter_number / Math.max(chapter.series.chapters, 1) * 100)}% through {chapter.series.title}.</p>
+                {nextChapter && <Link href={`/reader/${nextChapter.id}`} className="button button-primary">Next chapter <ArrowRight size={15} /></Link>}
+              </div>
+            ) : (
+              <ReaderStackPage
+                url={pages[virtualItem.index].url}
+                alt={`${chapter.series.title}, ${chapter.title}, page ${pages[virtualItem.index].pageNumber}`}
+                pageNumber={pages[virtualItem.index].pageNumber}
+                zoom={zoom}
+                pageWidth={pageWidth}
+              />
+            )}
+          </div>)}
         </div>
       </div>
     ) : (
@@ -185,7 +218,17 @@ export function ReaderView({ chapterId }: { chapterId: string }) {
         step(deltaX < 0 ? (direction === "rtl" ? -1 : 1) : (direction === "rtl" ? 1 : -1));
       }} onTouchCancel={() => { touchStart.current = null; }}>
         <button type="button" className="page-nav page-nav-left" aria-label="Previous page" onClick={() => step(direction === "rtl" ? 1 : -1)}><ChevronLeft size={20} /></button>
-        <div className="reader-page single-reader-page"><Image src={pageByNumber.get(page) ?? pages[0].url} alt={`${chapter.series.title}, ${chapter.title}, page ${page}`} fill unoptimized sizes="(max-width: 800px) 80vw, 700px" style={{ objectFit: "contain", transform: `scale(${zoom / 100})` }} /><span className="reader-page-number">{String(page).padStart(2, "0")}</span></div>
+        <div className="reader-page single-reader-page">
+          {(() => {
+            const url = pageByNumber.get(page) ?? pages[0].url;
+            const sizes = "(max-width: 800px) 80vw, 700px";
+            return <picture className="reader-image-picture">
+              <source srcSet={readerImageSrcSet(url)} sizes={sizes} />
+              <Image src={url} alt={`${chapter.series.title}, ${chapter.title}, page ${page}`} fill unoptimized sizes={sizes} style={{ objectFit: "contain", transform: `scale(${zoom / 100})` }} />
+            </picture>;
+          })()}
+          <span className="reader-page-number">{String(page).padStart(2, "0")}</span>
+        </div>
         <button type="button" className="page-nav page-nav-right" aria-label="Next page" onClick={() => step(direction === "rtl" ? -1 : 1)}><ChevronRight size={20} /></button>
       </div>
     )}

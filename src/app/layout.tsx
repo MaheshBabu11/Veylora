@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { Geist } from "next/font/google";
 import { QueryProvider } from "@/components/query-provider";
 import "./globals.css";
@@ -13,7 +14,8 @@ export const metadata: Metadata = {
   description: "A thoughtful, local-first home for your series collection.",
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  await headers();
   return (
     <html lang="en" data-theme="dark">
       <body className={geist.variable}><QueryProvider>{children}</QueryProvider></body>
